@@ -1,0 +1,179 @@
+# GitHub Copilot Instructions — GPArchitect
+
+These instructions are strict. Generated code and documentation must follow them.
+
+GPArchitect is a Python library for building Gaussian Process models from
+natural-language instructions via a formal intermediate DSL using BoTorch
+and GPyTorch.
+
+---
+
+## Core Architectural Rule
+
+Natural language must NEVER directly construct models.
+
+All model construction must follow this pipeline:
+
+Natural language → GP DSL → Validation → Model Builder → Fit → Validation → Recovery
+
+The DSL representation is the single source of truth.
+
+---
+
+## Documentation Source of Truth
+
+Keep this file for normative rules only.
+
+- Use this file for must and must-not guidance.
+- Use `docs/architecture_module_map.md` for architecture boundaries.
+- Use `README.md` and `docs/quickstart.md` for user-facing documentation.
+
+When functionality changes:
+
+- Update this file only if rules change
+- Update architecture docs if boundaries change
+- Update README/quickstart if usage changes
+
+---
+
+## Architecture and Design Rules
+
+GPArchitect is a compiler-style system with strict separation of concerns:
+
+1. Natural language translation
+2. DSL schema and representation
+3. DSL validation
+4. Model construction from DSL
+5. Fitting and prediction
+6. DSL revision and recovery
+7. Logging and experiment history
+8. User-facing API and CLI
+
+### Key Principles
+
+- DSL is the authoritative specification
+- No hidden state or implicit behavior
+- Deterministic model construction
+- Explicit data flow between modules
+- Reproducibility of results
+- Inspectability of decisions
+
+---
+
+## DSL Requirements
+
+The GP DSL must be:
+
+- Structured and typed (dataclasses or Pydantic)
+- Fully parseable
+- Validatable before execution
+- JSON-serializable
+- Human-readable
+- Stable across versions
+- Independent of natural-language phrasing
+
+The DSL must represent:
+
+- Model class
+- Input feature groups
+- Kernel types per group
+- Kernel compositions (additive, multiplicative)
+- ARD usage
+- Priors when specified
+- Noise assumptions
+- Multitask structure
+- Optional constraints
+
+---
+
+## Language and Style
+
+- Target Python 3.13+
+- Use native typing only (`list[str]`, `dict[str, float]`, `X | None`)
+- Use `from __future__ import annotations`
+- Prefer clarity over cleverness
+- Avoid one-letter variable names
+- Use logging instead of print
+
+---
+
+## Documentation Requirements
+
+Every module must include a top-level docstring explaining:
+
+- Purpose
+- Role in the GPArchitect pipeline
+- Inputs and outputs
+- Non-obvious design decisions
+- What the module does not do
+
+All public APIs require Google-style docstrings.
+
+---
+
+## Code Quality
+
+Avoid:
+
+- Unused imports or variables
+- Bare except blocks
+- Silent failure paths
+- Commented-out code
+- Global mutable state
+
+Max line length: 130 characters.
+
+---
+
+## Testing Expectations
+
+Add tests for:
+
+- Natural language → DSL translation
+- DSL validation
+- Model construction from DSL
+- Failure recovery via DSL revision
+- Fallback-to-default behavior
+
+Use small synthetic datasets.
+
+---
+
+## BoTorch and GPyTorch Rules
+
+- Prefer SingleTaskGP, MultiTaskGP, ModelListGP
+- Avoid custom ExactGP subclasses unless necessary
+- Use BoTorch defaults when parameters are unspecified
+- Apply priors only when explicitly requested
+- Ensure compatibility with BoTorch fitting utilities
+
+---
+
+## Failure Recovery
+
+If construction, fitting, or prediction fails:
+
+1. Capture error
+2. Revise DSL specification (not natural language)
+3. Revalidate DSL
+4. Retry model construction
+5. Log all revisions and rationale
+
+Allowed recovery actions include:
+
+- Simplifying kernels
+- Removing invalid priors
+- Disabling ARD
+- Switching model type
+- Using default noise assumptions
+
+All revisions must be recorded.
+
+---
+
+## Non-Goals
+
+- No web application or UI
+- No general-purpose LLM agent framework
+- No categorical or binary input support in v1
+- Focus on continuous inputs and optional task variables
