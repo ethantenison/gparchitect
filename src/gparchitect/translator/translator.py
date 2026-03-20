@@ -13,6 +13,7 @@ Inputs:
     - input_dim: int — total number of input features (from the supplied DataFrame).
     - output_dim: int — number of output dimensions.
     - task_feature_index: int | None — column index of the task indicator, if any.
+    - input_feature_names: list[str] | None — optional continuous input column names.
 
 Outputs:
     GPSpec — a fully-specified DSL object suitable for validation and model construction.
@@ -75,14 +76,21 @@ _ARD_PATTERN = re.compile(r"\bard\b|\bautomatic.?relevance\b", re.IGNORECASE)
 _FIXED_NOISE_PATTERN = re.compile(r"\bfixed.?noise\b|\bnoise.?free\b|\bnoiseless\b", re.IGNORECASE)
 _ADDITIVE_PATTERN = re.compile(r"\badditive\b|\bsum.?of.?kernel\b", re.IGNORECASE)
 _MULTIPLICATIVE_PATTERN = re.compile(r"\bmultiplicative\b|\bproduct.?of.?kernel\b", re.IGNORECASE)
+_CLAUSE_SPLIT_PATTERN = re.compile(r"\s+(?:and|then)\s+|;", re.IGNORECASE)
+_FEATURE_PREPOSITION_PATTERN = re.compile(r"\b(?:on|for|across|over|applied to|using)\b", re.IGNORECASE)
+
+
+def _match_kernel_type(instruction: str) -> KernelType | None:
+    """Return the first matching kernel type from the instruction, if any."""
+    for pattern, kernel_type in _KERNEL_KEYWORDS:
+        if pattern.search(instruction):
+            return kernel_type
+    return None
 
 
 def _detect_kernel_type(instruction: str) -> KernelType:
     """Return the first matching kernel type from the instruction, defaulting to Matern52."""
-    for pattern, kernel_type in _KERNEL_KEYWORDS:
-        if pattern.search(instruction):
-            return kernel_type
-    return KernelType.MATERN_52
+    return _match_kernel_type(instruction) or KernelType.MATERN_52
 
 
 def _detect_model_class(instruction: str, task_feature_index: int | None) -> ModelClass:
@@ -95,11 +103,13 @@ def _detect_model_class(instruction: str, task_feature_index: int | None) -> Mod
     return ModelClass.SINGLE_TASK_GP
 
 
-def _detect_composition(instruction: str) -> CompositionType:
-    """Detect the inter-group kernel composition from the instruction."""
+def _detect_explicit_composition(instruction: str) -> CompositionType | None:
+    """Detect an explicit inter-group kernel composition directive from the instruction."""
     if _MULTIPLICATIVE_PATTERN.search(instruction):
         return CompositionType.MULTIPLICATIVE
-    return CompositionType.ADDITIVE
+    if _ADDITIVE_PATTERN.search(instruction):
+        return CompositionType.ADDITIVE
+    return None
 
 
 def _detect_noise(instruction: str) -> NoiseSpec:
@@ -109,11 +119,55 @@ def _detect_noise(instruction: str) -> NoiseSpec:
     return NoiseSpec(fixed=False)
 
 
+def _find_referenced_features(clause: str, input_feature_names: list[str]) -> list[int]:
+    """Return continuous feature indices referenced in a clause by exact column name."""
+    clause_lower = clause.lower()
+    referenced_indices: list[int] = []
+    for index, feature_name in enumerate(input_feature_names):
+        feature_pattern = re.compile(rf"(?<!\w){re.escape(feature_name.lower())}(?!\w)")
+        if feature_pattern.search(clause_lower):
+            referenced_indices.append(index)
+    return referenced_indices
+
+
+def _extract_feature_groups(
+    instruction: str,
+    input_feature_names: list[str] | None,
+    use_ard: bool,
+) -> list[FeatureGroupSpec]:
+    """Extract feature-specific kernel groups from natural language when column names are available."""
+    if not input_feature_names:
+        return []
+
+    feature_groups: list[FeatureGroupSpec] = []
+    for clause in _CLAUSE_SPLIT_PATTERN.split(instruction):
+        kernel_type = _match_kernel_type(clause)
+        if kernel_type is None:
+            continue
+        if not _FEATURE_PREPOSITION_PATTERN.search(clause):
+            continue
+
+        feature_indices = _find_referenced_features(clause, input_feature_names)
+        if not feature_indices:
+            continue
+
+        feature_groups.append(
+            FeatureGroupSpec(
+                name="_".join(input_feature_names[index] for index in feature_indices),
+                feature_indices=feature_indices,
+                kernel=KernelSpec(kernel_type=kernel_type, ard=use_ard),
+            )
+        )
+
+    return feature_groups
+
+
 def translate_to_dsl(
     instruction: str,
     input_dim: int,
     output_dim: int = 1,
     task_feature_index: int | None = None,
+    input_feature_names: list[str] | None = None,
 ) -> GPSpec:
     """Translate a natural-language GP instruction into a GPSpec DSL object.
 
@@ -124,6 +178,7 @@ def translate_to_dsl(
         input_dim: Total number of continuous input features.
         output_dim: Number of model outputs (default 1).
         task_feature_index: Column index of the task indicator for MultiTaskGP.
+        input_feature_names: Optional continuous feature names used for column-aware parsing.
 
     Returns:
         GPSpec: A fully-specified, deterministic DSL object.
@@ -135,12 +190,19 @@ def translate_to_dsl(
 
     kernel_type = _detect_kernel_type(instruction)
     model_class = _detect_model_class(instruction, task_feature_index)
-    composition = _detect_composition(instruction)
+    explicit_composition = _detect_explicit_composition(instruction)
     noise = _detect_noise(instruction)
     use_ard = bool(_ARD_PATTERN.search(instruction))
+    feature_groups = _extract_feature_groups(instruction, input_feature_names, use_ard)
 
-    # For ModelListGP, create one feature group per output; otherwise one group for all inputs.
-    if model_class == ModelClass.MODEL_LIST_GP:
+    if feature_groups:
+        composition = explicit_composition
+        if composition is None:
+            composition = CompositionType.HIERARCHICAL if len(feature_groups) > 1 else CompositionType.ADDITIVE
+
+    # For ModelListGP, create one feature group per output when no column-specific mapping is provided.
+    elif model_class == ModelClass.MODEL_LIST_GP:
+        composition = explicit_composition or CompositionType.ADDITIVE
         continuous_indices = [idx for idx in range(input_dim) if idx != task_feature_index]
         feature_groups = [
             FeatureGroupSpec(
@@ -151,6 +213,7 @@ def translate_to_dsl(
             for output_idx in range(output_dim)
         ]
     else:
+        composition = explicit_composition or CompositionType.ADDITIVE
         continuous_indices = [idx for idx in range(input_dim) if idx != task_feature_index]
         feature_groups = [
             FeatureGroupSpec(
@@ -166,7 +229,7 @@ def translate_to_dsl(
 
     description = (
         f"Translated from: '{instruction[:80]}{'...' if len(instruction) > 80 else ''}' | "
-        f"model={model_class.value}, kernel={kernel_type.value}, ard={use_ard}"
+        f"model={model_class.value}, kernel={kernel_type.value}, ard={use_ard}, groups={len(feature_groups)}"
     )
 
     spec = GPSpec(

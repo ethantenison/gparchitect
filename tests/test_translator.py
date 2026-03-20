@@ -110,6 +110,29 @@ class TestTranslateComposition:
         spec = translate_to_dsl("Use multiplicative kernel combination", input_dim=3)
         assert spec.group_composition == CompositionType.MULTIPLICATIVE
 
+    def test_feature_specific_kernels_default_to_hierarchical(self) -> None:
+        spec = translate_to_dsl(
+            "Use a rbf kernel on x1 and a matern1/2 kernel on x2.",
+            input_dim=2,
+            input_feature_names=["x1", "x2"],
+        )
+
+        assert spec.group_composition == CompositionType.HIERARCHICAL
+        assert len(spec.feature_groups) == 2
+        assert spec.feature_groups[0].feature_indices == [0]
+        assert spec.feature_groups[0].kernel.kernel_type == KernelType.RBF
+        assert spec.feature_groups[1].feature_indices == [1]
+        assert spec.feature_groups[1].kernel.kernel_type == KernelType.MATERN_12
+
+    def test_feature_specific_kernels_respect_additive_override(self) -> None:
+        spec = translate_to_dsl(
+            "Use an additive rbf kernel on x1 and a matern1/2 kernel on x2.",
+            input_dim=2,
+            input_feature_names=["x1", "x2"],
+        )
+
+        assert spec.group_composition == CompositionType.ADDITIVE
+
 
 class TestTranslateStructure:
     def test_input_dim_stored(self) -> None:

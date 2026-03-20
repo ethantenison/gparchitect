@@ -94,6 +94,7 @@ def main(
             input_dim=data_bundle.input_dim,
             output_dim=data_bundle.output_dim,
             task_feature_index=data_bundle.task_feature_index,
+            input_feature_names=input_columns,
         )
         validation_result = validate_dsl(spec)
 

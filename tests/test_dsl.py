@@ -160,3 +160,4 @@ class TestGPSpec:
         assert ModelClass.SINGLE_TASK_GP.value == "SingleTaskGP"
         assert KernelType.MATERN_52.value == "Matern52"
         assert CompositionType.ADDITIVE.value == "additive"
+        assert CompositionType.HIERARCHICAL.value == "hierarchical"

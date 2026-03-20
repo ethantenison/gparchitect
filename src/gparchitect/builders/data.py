@@ -20,12 +20,13 @@ Outputs:
 
 Non-obvious design decisions:
     - Tensors are always float64 (torch.double) for numerical stability with BoTorch.
+        - Continuous input columns are min-max scaled into [0, 1] before model building.
     - The task column is kept in train_X (as the last column when specified) so that
       the builder module can extract it by index.
     - Missing values are rejected with a clear error.
 
 What this module does NOT do:
-    - It does not fit or scale the data.
+    - It does not fit the data.
     - It does not infer column roles — callers must specify them explicitly.
 """
 
@@ -60,6 +61,8 @@ class DataBundle:
     input_columns: list[str]
     output_columns: list[str]
     task_column: str | None
+    input_scaling_applied: bool
+    input_feature_ranges: dict[str, tuple[float, float]]
 
 
 def prepare_data(
@@ -68,7 +71,7 @@ def prepare_data(
     output_columns: list[str],
     task_column: str | None = None,
 ) -> DataBundle:
-    """Convert a pandas DataFrame into a DataBundle of torch tensors.
+    """Convert a pandas DataFrame into a DataBundle of scaled torch tensors.
 
     Args:
         dataframe: A pandas DataFrame with numeric columns.
@@ -102,8 +105,24 @@ def prepare_data(
         input_cols_full.append(task_column)
         task_feature_index = len(input_cols_full) - 1
 
+    scaled_inputs = dataframe[input_columns].copy()
+    input_feature_ranges: dict[str, tuple[float, float]] = {}
+    for column in input_columns:
+        column_min = float(scaled_inputs[column].min())
+        column_max = float(scaled_inputs[column].max())
+        input_feature_ranges[column] = (column_min, column_max)
+        scale = column_max - column_min
+        if scale > 0:
+            scaled_inputs[column] = (scaled_inputs[column] - column_min) / scale
+        else:
+            scaled_inputs[column] = 0.0
+
+    train_X_frame = scaled_inputs.copy()
+    if task_column is not None:
+        train_X_frame[task_column] = dataframe[task_column].astype(float)
+
     train_X = torch.tensor(
-        dataframe[input_cols_full].to_numpy(dtype=float),
+        train_X_frame[input_cols_full].to_numpy(dtype=float),
         dtype=torch.double,
     )
     train_Y = torch.tensor(
@@ -127,4 +146,6 @@ def prepare_data(
         input_columns=input_cols_full,
         output_columns=output_columns,
         task_column=task_column,
+        input_scaling_applied=True,
+        input_feature_ranges=input_feature_ranges,
     )

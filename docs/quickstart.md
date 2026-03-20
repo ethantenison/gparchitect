@@ -32,6 +32,7 @@ poetry add gparchitect
 ### 1. Prepare your data
 
 GPArchitect accepts a **pandas DataFrame** with labelled input and output columns.
+Continuous input columns are min-max scaled into the unit cube before model building.
 
 ```python
 import pandas as pd
@@ -50,13 +51,17 @@ from gparchitect import run_gparchitect
 
 model, experiment_log = run_gparchitect(
     dataframe=df,
-    instruction="Use a Matern 5/2 kernel with ARD on all inputs.",
+    instruction="Use a rbf kernel on x1 and a matern1/2 kernel on x2.",
     input_columns=["x1", "x2"],
     output_columns=["y"],
 )
 
 print("Success:", experiment_log.final_success)
 ```
+
+If you name different kernels for different input columns, GPArchitect maps those
+names onto the provided `input_columns`. Without an explicit additive or multiplicative
+directive, the default composition is hierarchical: main effects plus interactions.
 
 ### 3. Inspect the generated DSL
 
@@ -179,6 +184,9 @@ for attempt in experiment_log.attempts:
 | `polynomial`                      | Polynomial    |
 
 Add `ard` or `automatic relevance determination` to enable ARD.
+
+Outputs for `SingleTaskGP` and `ModelListGP` are standardized through BoTorch
+outcome transforms during model construction.
 
 ---
 

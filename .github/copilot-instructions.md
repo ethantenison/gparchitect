@@ -121,7 +121,7 @@ Avoid:
 - Commented-out code
 - Global mutable state
 
-Max line length: 130 characters.
+Max line length: 120 characters.
 
 ---
 

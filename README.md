@@ -7,6 +7,9 @@ Provide a pandas DataFrame and a text specification, and it constructs, fits,
 and validates `SingleTaskGP`, `MultiTaskGP`, or `ModelListGP` models. If fitting
 fails, it revises the DSL specification, retries, and logs all changes.
 
+Continuous input columns are min-max scaled before model construction, and single-task
+outputs are standardized through BoTorch outcome transforms during fitting.
+
 ## Architecture
 
 GPArchitect follows a **compiler-style pipeline**:
@@ -31,13 +34,19 @@ df = pd.DataFrame({
 
 model, log = run_gparchitect(
     dataframe=df,
-    instruction="Use a Matern 5/2 kernel with ARD on all inputs.",
+    instruction="Use a rbf kernel on x1 and a matern1/2 kernel on x2.",
     input_columns=["x1", "x2"],
     output_columns=["y"],
 )
 
 print("Success:", log.final_success)
+print("Model:", model)
 ```
+
+Feature-specific kernel instructions are resolved against the provided `input_columns`.
+When multiple per-feature kernels are specified without an explicit additive or
+multiplicative directive, GPArchitect uses a hierarchical default that includes the
+main effects and their interaction.
 
 ## CLI
 
@@ -54,7 +63,7 @@ gparchitect --csv data.csv \
 pip install gparchitect
 ```
 
-Requires Python 3.13+, BoTorch ≥ 0.11, GPyTorch ≥ 1.11, and pandas ≥ 2.0.
+Requires Python 3.13.12, BoTorch ≥ 0.11, GPyTorch ≥ 1.11, and pandas ≥ 2.0.
 
 ## Documentation
 

@@ -85,12 +85,15 @@ def run_gparchitect(
         input_dim=data_bundle.input_dim,
         output_dim=data_bundle.output_dim,
         task_feature_index=data_bundle.task_feature_index,
+        input_feature_names=input_columns,
     )
 
     experiment_log = ExperimentLog(
         instruction=instruction,
         input_dim=data_bundle.input_dim,
         output_dim=data_bundle.output_dim,
+        input_scaling_applied=data_bundle.input_scaling_applied,
+        input_feature_ranges=data_bundle.input_feature_ranges,
     )
 
     for attempt in range(max_retries + 1):

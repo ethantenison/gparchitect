@@ -59,6 +59,7 @@ class CompositionType(str, Enum):
 
     ADDITIVE = "additive"
     MULTIPLICATIVE = "multiplicative"
+    HIERARCHICAL = "hierarchical"
     NONE = "none"
 
 
@@ -138,7 +139,7 @@ class GPSpec(BaseModel):
         output_dim: Number of output dimensions (1 for single-task).
         task_feature_index: Column index of the task indicator (MultiTaskGP only).
         multitask_rank: Rank of the inter-task covariance (MultiTaskGP only).
-        group_composition: How feature-group kernels are combined (additive/multiplicative).
+        group_composition: How feature-group kernels are combined.
         description: Optional human-readable summary of the specification.
     """
 

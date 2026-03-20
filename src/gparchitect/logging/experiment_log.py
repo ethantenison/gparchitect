@@ -79,6 +79,8 @@ class ExperimentLog:
         instruction: The original natural-language instruction.
         input_dim: Number of input features.
         output_dim: Number of output features.
+        input_scaling_applied: Whether continuous inputs were min-max scaled.
+        input_feature_ranges: Original min/max ranges for each continuous input feature.
         attempts: List of AttemptRecord objects, one per pipeline attempt.
         final_success: Whether any attempt succeeded.
         created_at: ISO 8601 UTC timestamp for when the run started.
@@ -87,6 +89,8 @@ class ExperimentLog:
     instruction: str
     input_dim: int
     output_dim: int
+    input_scaling_applied: bool = False
+    input_feature_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
     attempts: list[AttemptRecord] = field(default_factory=list)
     final_success: bool = False
     created_at: str = field(default_factory=_now_iso)
@@ -110,6 +114,8 @@ class ExperimentLog:
             "instruction": self.instruction,
             "input_dim": self.input_dim,
             "output_dim": self.output_dim,
+            "input_scaling_applied": self.input_scaling_applied,
+            "input_feature_ranges": self.input_feature_ranges,
             "final_success": self.final_success,
             "created_at": self.created_at,
             "attempts": [
@@ -155,10 +161,15 @@ def summarize_attempts(experiment_log: ExperimentLog) -> str:
         f"  Instruction : {experiment_log.instruction[:100]}",
         f"  Input dim   : {experiment_log.input_dim}",
         f"  Output dim  : {experiment_log.output_dim}",
+        f"  Input scaled: {experiment_log.input_scaling_applied}",
         f"  Total attempts: {len(experiment_log.attempts)}",
         f"  Final success : {experiment_log.final_success}",
         "",
     ]
+
+    if experiment_log.input_feature_ranges:
+        lines.append(f"  Input ranges: {experiment_log.input_feature_ranges}")
+        lines.append("")
 
     for rec in experiment_log.attempts:
         status = "SUCCESS" if rec.fit_success else "FAILED"
