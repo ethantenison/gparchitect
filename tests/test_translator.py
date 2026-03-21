@@ -133,6 +133,34 @@ class TestTranslateComposition:
 
         assert spec.group_composition == CompositionType.ADDITIVE
 
+    def test_kernel_mentions_preserve_time_and_grouped_features(self) -> None:
+        spec = translate_to_dsl(
+            (
+                "Use an rbf kernel on month_index, a matern3/2 kernel on credit_spread_bps "
+                "and vix_level, and an rbf kernel on net_flow_pct and momentum_3m_pct."
+            ),
+            input_dim=5,
+            input_feature_names=[
+                "month_index",
+                "credit_spread_bps",
+                "vix_level",
+                "net_flow_pct",
+                "momentum_3m_pct",
+            ],
+        )
+
+        assert spec.group_composition == CompositionType.HIERARCHICAL
+        assert len(spec.feature_groups) == 3
+
+        assert spec.feature_groups[0].feature_indices == [0]
+        assert spec.feature_groups[0].kernel.kernel_type == KernelType.RBF
+
+        assert spec.feature_groups[1].feature_indices == [1, 2]
+        assert spec.feature_groups[1].kernel.kernel_type == KernelType.MATERN_32
+
+        assert spec.feature_groups[2].feature_indices == [3, 4]
+        assert spec.feature_groups[2].kernel.kernel_type == KernelType.RBF
+
 
 class TestTranslateStructure:
     def test_input_dim_stored(self) -> None:

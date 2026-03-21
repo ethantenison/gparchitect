@@ -28,7 +28,7 @@ Non-obvious design decisions:
 What this module does NOT do:
     - It does not call any external language model or API.
     - It does not validate the resulting DSL (see validation module).
-    - It does not handle DataFrame column names — only integer indices are used.
+    - It does not inspect the actual data values.
 """
 
 from __future__ import annotations
@@ -44,7 +44,6 @@ from gparchitect.dsl.schema import (
     KernelType,
     ModelClass,
     NoiseSpec,
-    PriorSpec,
 )
 
 logger = logging.getLogger(__name__)
@@ -76,7 +75,6 @@ _ARD_PATTERN = re.compile(r"\bard\b|\bautomatic.?relevance\b", re.IGNORECASE)
 _FIXED_NOISE_PATTERN = re.compile(r"\bfixed.?noise\b|\bnoise.?free\b|\bnoiseless\b", re.IGNORECASE)
 _ADDITIVE_PATTERN = re.compile(r"\badditive\b|\bsum.?of.?kernel\b", re.IGNORECASE)
 _MULTIPLICATIVE_PATTERN = re.compile(r"\bmultiplicative\b|\bproduct.?of.?kernel\b", re.IGNORECASE)
-_CLAUSE_SPLIT_PATTERN = re.compile(r"\s+(?:and|then)\s+|;", re.IGNORECASE)
 _FEATURE_PREPOSITION_PATTERN = re.compile(r"\b(?:on|for|across|over|applied to|using)\b", re.IGNORECASE)
 
 
@@ -130,6 +128,26 @@ def _find_referenced_features(clause: str, input_feature_names: list[str]) -> li
     return referenced_indices
 
 
+def _find_kernel_mentions(instruction: str) -> list[tuple[int, int, KernelType]]:
+    """Return non-overlapping kernel mentions in instruction order."""
+    matches: list[tuple[int, int, int, KernelType]] = []
+    for priority, (pattern, kernel_type) in enumerate(_KERNEL_KEYWORDS):
+        for match in pattern.finditer(instruction):
+            matches.append((match.start(), match.end(), priority, kernel_type))
+
+    matches.sort(key=lambda item: (item[0], item[2], -(item[1] - item[0])))
+
+    resolved_matches: list[tuple[int, int, KernelType]] = []
+    last_end = -1
+    for start, end, _, kernel_type in matches:
+        if start < last_end:
+            continue
+        resolved_matches.append((start, end, kernel_type))
+        last_end = end
+
+    return resolved_matches
+
+
 def _extract_feature_groups(
     instruction: str,
     input_feature_names: list[str] | None,
@@ -140,14 +158,19 @@ def _extract_feature_groups(
         return []
 
     feature_groups: list[FeatureGroupSpec] = []
-    for clause in _CLAUSE_SPLIT_PATTERN.split(instruction):
-        kernel_type = _match_kernel_type(clause)
-        if kernel_type is None:
-            continue
-        if not _FEATURE_PREPOSITION_PATTERN.search(clause):
+    kernel_mentions = _find_kernel_mentions(instruction)
+    for index, (kernel_start, kernel_end, kernel_type) in enumerate(kernel_mentions):
+        clause_end = len(instruction)
+        if index + 1 < len(kernel_mentions):
+            clause_end = kernel_mentions[index + 1][0]
+
+        clause_tail = instruction[kernel_end:clause_end]
+        preposition_match = _FEATURE_PREPOSITION_PATTERN.search(clause_tail)
+        if preposition_match is None:
             continue
 
-        feature_indices = _find_referenced_features(clause, input_feature_names)
+        feature_text = clause_tail[preposition_match.end() :]
+        feature_indices = _find_referenced_features(feature_text, input_feature_names)
         if not feature_indices:
             continue
 

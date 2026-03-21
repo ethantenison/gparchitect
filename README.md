@@ -27,16 +27,28 @@ import pandas as pd
 from gparchitect import run_gparchitect
 
 df = pd.DataFrame({
-    "x1": [0.1, 0.5, 0.9, 0.2, 0.8],
-    "x2": [1.0, 2.0, 3.0, 4.0, 5.0],
-    "y":  [0.3, 0.7, 0.4, 0.6, 0.5],
+    "month_index": [1, 2, 3, 4, 5, 6, 7, 8],
+    "credit_spread_bps": [128, 122, 135, 148, 141, 130, 118, 112],
+    "vix_level": [14.8, 13.9, 16.4, 18.7, 17.1, 15.2, 13.6, 12.9],
+    "net_flow_pct": [0.6, 0.9, 0.2, -0.4, 0.1, 0.8, 1.1, 1.4],
+    "momentum_3m_pct": [1.8, 2.4, 1.1, -0.6, 0.4, 1.7, 2.9, 3.6],
+    "etf_return_pct": [0.012, 0.018, -0.007, -0.024, -0.003, 0.016, 0.028, 0.035],
 })
 
 model, log = run_gparchitect(
     dataframe=df,
-    instruction="Use a rbf kernel on x1 and a matern1/2 kernel on x2.",
-    input_columns=["x1", "x2"],
-    output_columns=["y"],
+    instruction=(
+        "Use an rbf kernel on month_index, a matern3/2 kernel on credit_spread_bps "
+        "and vix_level, and an rbf kernel on net_flow_pct and momentum_3m_pct."
+    ),
+    input_columns=[
+        "month_index",
+        "credit_spread_bps",
+        "vix_level",
+        "net_flow_pct",
+        "momentum_3m_pct",
+    ],
+    output_columns=["etf_return_pct"],
 )
 
 print("Success:", log.final_success)

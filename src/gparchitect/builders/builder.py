@@ -21,6 +21,10 @@ Non-obvious design decisions:
       GPArchitect to import without requiring them to be installed.
     - Kernel construction follows the feature-group spec: each group gets its own
       kernel; groups are combined via AdditiveKernel or ProductKernel as specified.
+        - Additive compositions keep per-term ScaleKernel wrappers and do not add an
+            extra outer scale around the sum.
+        - Multiplicative compositions keep a single outer ScaleKernel around the full
+            product and avoid scaling each factor independently.
     - ARD is implemented by passing `ard_num_dims` equal to the number of features
       in the group.
     - Custom ExactGP subclasses are avoided; BoTorch's SingleTaskGP is used directly
@@ -120,6 +124,13 @@ def _build_gpytorch_kernel_with_active_dims(
         base_kernel = kernel_map[kernel_spec.kernel_type]()
 
     if kernel_spec.children:
+        if kernel_spec.composition == CompositionType.ADDITIVE:
+            child_kernels = [
+                _build_gpytorch_kernel_with_active_dims(child, active_dims)
+                for child in kernel_spec.children
+            ]
+            return gpytorch.kernels.AdditiveKernel(*child_kernels)
+
         child_kernels = [
             _build_gpytorch_kernel_with_active_dims(
                 child,

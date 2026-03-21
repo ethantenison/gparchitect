@@ -78,6 +78,43 @@ class TestPrepareInputs:
 
 
 class TestCovarianceBuilder:
+    def test_additive_group_composition_keeps_per_term_scales(self) -> None:
+        try:
+            import gpytorch
+            import torch
+        except ImportError:
+            pytest.skip("gpytorch or torch not installed")
+
+        from gparchitect.builders.builder import _build_covariance_module, _prepare_inputs
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="x1",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.RBF),
+                ),
+                FeatureGroupSpec(
+                    name="x2",
+                    feature_indices=[1],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_12),
+                ),
+            ],
+            noise=NoiseSpec(),
+            input_dim=2,
+            output_dim=1,
+            group_composition=CompositionType.ADDITIVE,
+        )
+
+        train_X = torch.tensor([[0.0, 0.0], [1.0, 1.0]], dtype=torch.double)
+        train_Y = torch.tensor([[0.0], [1.0]], dtype=torch.double)
+        _, _, feature_index_map = _prepare_inputs(spec, train_X, train_Y)
+        covar_module = _build_covariance_module(spec, feature_index_map)
+
+        assert isinstance(covar_module, gpytorch.kernels.AdditiveKernel)
+        assert all(isinstance(component, gpytorch.kernels.ScaleKernel) for component in covar_module.kernels)
+
     def test_hierarchical_covariance_uses_active_dims(self) -> None:
         try:
             import gpytorch
@@ -190,6 +227,64 @@ class TestCovarianceBuilder:
             not isinstance(component, gpytorch.kernels.ScaleKernel)
             for component in kernel.base_kernel.kernels
         )
+
+    def test_nested_additive_kernel_scales_each_term_without_outer_scale(self) -> None:
+        try:
+            import gpytorch
+        except ImportError:
+            pytest.skip("gpytorch not installed")
+
+        from gparchitect.builders.builder import _build_gpytorch_kernel
+
+        kernel_spec = KernelSpec(
+            kernel_type=KernelType.RBF,
+            composition=CompositionType.ADDITIVE,
+            children=[
+                KernelSpec(kernel_type=KernelType.RBF),
+                KernelSpec(kernel_type=KernelType.MATERN_12),
+            ],
+        )
+
+        kernel = _build_gpytorch_kernel(kernel_spec, num_features=1)
+
+        assert isinstance(kernel, gpytorch.kernels.AdditiveKernel)
+        assert all(isinstance(component, gpytorch.kernels.ScaleKernel) for component in kernel.kernels)
+
+    def test_product_of_additive_factors_has_single_outer_scale(self) -> None:
+        try:
+            import gpytorch
+        except ImportError:
+            pytest.skip("gpytorch not installed")
+
+        from gparchitect.builders.builder import _build_gpytorch_kernel
+
+        additive_factor = KernelSpec(
+            kernel_type=KernelType.RBF,
+            composition=CompositionType.ADDITIVE,
+            children=[
+                KernelSpec(kernel_type=KernelType.RBF),
+                KernelSpec(kernel_type=KernelType.LINEAR),
+            ],
+        )
+        kernel_spec = KernelSpec(
+            kernel_type=KernelType.RBF,
+            composition=CompositionType.MULTIPLICATIVE,
+            children=[
+                additive_factor,
+                KernelSpec(kernel_type=KernelType.MATERN_12),
+            ],
+        )
+
+        kernel = _build_gpytorch_kernel(kernel_spec, num_features=1)
+
+        assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
+        assert isinstance(kernel.base_kernel, gpytorch.kernels.ProductKernel)
+        assert isinstance(kernel.base_kernel.kernels[0], gpytorch.kernels.AdditiveKernel)
+        assert all(
+            isinstance(component, gpytorch.kernels.ScaleKernel)
+            for component in kernel.base_kernel.kernels[0].kernels
+        )
+        assert not isinstance(kernel.base_kernel.kernels[1], gpytorch.kernels.ScaleKernel)
 
 
 class TestBuildModelMocked:
