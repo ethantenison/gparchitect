@@ -186,13 +186,17 @@ for attempt in experiment_log.attempts:
 | `linear`                          | Linear        |
 | `polynomial`                      | Polynomial    |
 | `spectral mixture`                | Spectral Mixture |
+| `infinite width bnn`, `iwbnn`     | Infinite Width BNN |
+| `exponential decay`               | Exponential Decay |
 
 ARD is enabled by default for kernels that support it. Use `without ard`, `disable ard`,
 or `shared lengthscale` to disable ARD explicitly when you want one shared lengthscale
 across the input dimensions in a group.
-For kernel-specific parameters, phrases like `alpha 0.75` are applied to RQ kernels, and
-phrases like `4 component spectral mixture kernel` or `initialized from the empirical spectrum`
-configure Spectral Mixture kernels.
+For kernel-specific parameters, phrases like `alpha 0.75` are applied to RQ kernels,
+`period length 12` configures Periodic kernels, `degree 3` and `offset 1.5` configure
+Polynomial kernels, `depth 5` configures Infinite Width BNN kernels, `4 component spectral
+mixture kernel` or `initialized from the empirical spectrum` configure Spectral Mixture
+kernels, and `power 2.5` plus `offset 0.2` configure Exponential Decay kernels.
 
 Outputs for `SingleTaskGP` and `ModelListGP` are standardized through BoTorch
 outcome transforms during model construction.

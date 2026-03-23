@@ -147,7 +147,7 @@ def _check_feature_groups(spec: GPSpec, result: ValidationResult) -> None:
                 )
         all_indices.extend(group.feature_indices)
 
-        _check_kernel_spec(group.name, group.kernel, result)
+        _check_kernel_spec(group.name, group.kernel, len(group.feature_indices), result)
 
     # Warn when feature groups use an unsupported composition type
     if len(spec.feature_groups) > 1 and spec.group_composition == CompositionType.NONE:
@@ -156,7 +156,7 @@ def _check_feature_groups(spec: GPSpec, result: ValidationResult) -> None:
         )
 
 
-def _check_kernel_spec(group_name: str, kernel, result: ValidationResult) -> None:  # noqa: ANN001
+def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: ValidationResult) -> None:  # noqa: ANN001
     """Recursively validate a KernelSpec."""
     if kernel.kernel_type in _PERIODIC_ONLY_KERNELS:
         # Periodic kernels require a single feature dimension
@@ -170,6 +170,21 @@ def _check_kernel_spec(group_name: str, kernel, result: ValidationResult) -> Non
         result.errors.append(
             f"Feature group '{group_name}': RQ alpha must be > 0, got {kernel.rq_alpha}."
         )
+
+    if kernel.kernel_type == KernelType.PERIODIC and kernel.period_length is not None and kernel.period_length <= 0:
+        result.errors.append(
+            f"Feature group '{group_name}': Periodic period_length must be > 0, got {kernel.period_length}."
+        )
+
+    if kernel.kernel_type == KernelType.POLYNOMIAL:
+        if kernel.polynomial_power is not None and kernel.polynomial_power < 1:
+            result.errors.append(
+                f"Feature group '{group_name}': Polynomial power must be >= 1, got {kernel.polynomial_power}."
+            )
+        if kernel.polynomial_offset is not None and kernel.polynomial_offset <= 0:
+            result.errors.append(
+                f"Feature group '{group_name}': Polynomial offset must be > 0, got {kernel.polynomial_offset}."
+            )
 
     if kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
         if kernel.num_mixtures is not None and kernel.num_mixtures < 1:
@@ -190,8 +205,31 @@ def _check_kernel_spec(group_name: str, kernel, result: ValidationResult) -> Non
                 "active dimensionality; the builder will enforce this regardless of the DSL ard flag."
             )
 
+    if kernel.kernel_type == KernelType.INFINITE_WIDTH_BNN:
+        if kernel.bnn_depth is not None and kernel.bnn_depth < 1:
+            result.errors.append(
+                f"Feature group '{group_name}': InfiniteWidthBNN depth must be >= 1, got {kernel.bnn_depth}."
+            )
+
+    if kernel.kernel_type == KernelType.EXPONENTIAL_DECAY:
+        if feature_count != 1:
+            result.errors.append(
+                f"Feature group '{group_name}': ExponentialDecayKernel requires exactly one active feature, "
+                f"got {feature_count}."
+            )
+        if kernel.exponential_decay_power is not None and kernel.exponential_decay_power <= 0:
+            result.errors.append(
+                f"Feature group '{group_name}': ExponentialDecay power must be > 0, "
+                f"got {kernel.exponential_decay_power}."
+            )
+        if kernel.exponential_decay_offset is not None and kernel.exponential_decay_offset <= 0:
+            result.errors.append(
+                f"Feature group '{group_name}': ExponentialDecay offset must be > 0, "
+                f"got {kernel.exponential_decay_offset}."
+            )
+
     for child in kernel.children:
-        _check_kernel_spec(group_name, child, result)
+        _check_kernel_spec(group_name, child, feature_count, result)
 
 
 def _check_model_class_consistency(spec: GPSpec, result: ValidationResult) -> None:

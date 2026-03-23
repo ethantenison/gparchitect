@@ -102,6 +102,23 @@ class TestKernelSpec:
         assert data["num_mixtures"] == 4
         assert data["spectral_init"] == "from_empirical_spectrum"
 
+    def test_polynomial_fields_serialize(self) -> None:
+        kernel = KernelSpec(
+            kernel_type=KernelType.POLYNOMIAL,
+            polynomial_power=3,
+            polynomial_offset=1.25,
+        )
+        data = json.loads(kernel.model_dump_json())
+        assert data["kernel_type"] == "Polynomial"
+        assert data["polynomial_power"] == 3
+        assert data["polynomial_offset"] == pytest.approx(1.25)
+
+    def test_botorch_kernel_fields_serialize(self) -> None:
+        kernel = KernelSpec(kernel_type=KernelType.INFINITE_WIDTH_BNN, bnn_depth=5)
+        data = json.loads(kernel.model_dump_json())
+        assert data["kernel_type"] == "InfiniteWidthBNN"
+        assert data["bnn_depth"] == 5
+
 
 class TestFeatureGroupSpec:
     def test_basic_group(self) -> None:

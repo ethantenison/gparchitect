@@ -12,6 +12,9 @@ outputs are standardized through BoTorch outcome transforms during fitting.
 Kernels that support ARD use it by default unless the instruction explicitly disables it.
 Spectral mixture kernels are initialized from training data, with optional empirical-spectrum
 initialization when requested in the instruction.
+Polynomial kernels can also take a degree and offset, periodic kernels can take a period
+length, infinite-width BNN kernels can take a depth, and exponential-decay kernels can take
+power and offset values.
 
 ## Architecture
 
@@ -65,9 +68,11 @@ main effects and their interaction.
 If no feature groups are specified, GPArchitect falls back to a single kernel across all
 continuous inputs with ARD enabled when the kernel supports it. Use phrases such as
 `without ARD` or `shared lengthscale` to disable ARD explicitly.
-RQ kernels accept an optional `alpha` value, and spectral mixture kernels accept an optional
-number of mixtures plus initialization hints such as `initialized from data` or
-`initialized from the empirical spectrum`.
+RQ kernels accept an optional `alpha` value, periodic kernels accept `period length 12`,
+polynomial kernels accept `degree 3` and `offset 1.5`, infinite-width BNN kernels accept
+`depth 5`, spectral mixture kernels accept an optional number of mixtures plus initialization
+hints such as `initialized from data` or `initialized from the empirical spectrum`, and
+exponential-decay kernels accept `power 2.5` and `offset 0.2`.
 
 ## CLI
 

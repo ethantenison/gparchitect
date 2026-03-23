@@ -54,6 +54,8 @@ class KernelType(str, Enum):
     PERIODIC = "Periodic"
     POLYNOMIAL = "Polynomial"
     SPECTRAL_MIXTURE = "SpectralMixture"
+    INFINITE_WIDTH_BNN = "InfiniteWidthBNN"
+    EXPONENTIAL_DECAY = "ExponentialDecay"
 
 
 class SpectralMixtureInitialization(str, Enum):
@@ -109,9 +111,15 @@ class KernelSpec(BaseModel):
         composition: How this kernel is combined with others in the same feature group.
         children: Sub-kernels for composed (additive/multiplicative) kernels.
         period_prior: Optional prior on the period (for Periodic kernel only).
+        period_length: Optional fixed initialization value for the Periodic period length.
         rq_alpha: Optional fixed initialization value for the RQ alpha parameter.
+        polynomial_power: Optional degree for the Polynomial kernel.
+        polynomial_offset: Optional fixed initialization value for the Polynomial offset.
         num_mixtures: Number of components for the Spectral Mixture kernel.
         spectral_init: Initialization strategy for the Spectral Mixture kernel.
+        bnn_depth: Optional depth for the Infinite Width BNN kernel.
+        exponential_decay_power: Optional fixed initialization value for the ExponentialDecay power.
+        exponential_decay_offset: Optional fixed initialization value for the ExponentialDecay offset.
     """
 
     kernel_type: KernelType
@@ -121,9 +129,15 @@ class KernelSpec(BaseModel):
     composition: CompositionType = CompositionType.NONE
     children: list[KernelSpec] = Field(default_factory=list)
     period_prior: PriorSpec | None = None
+    period_length: float | None = None
     rq_alpha: float | None = None
+    polynomial_power: int | None = None
+    polynomial_offset: float | None = None
     num_mixtures: int | None = None
     spectral_init: SpectralMixtureInitialization = SpectralMixtureInitialization.FROM_DATA
+    bnn_depth: int | None = None
+    exponential_decay_power: float | None = None
+    exponential_decay_offset: float | None = None
 
 
 class FeatureGroupSpec(BaseModel):

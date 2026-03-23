@@ -171,6 +171,63 @@ class TestCovarianceBuilder:
 
         assert called["empspect"] is True
 
+    def test_polynomial_kernel_builds_with_configured_power_and_offset(self) -> None:
+        try:
+            import gpytorch
+        except ImportError:
+            pytest.skip("gpytorch not installed")
+
+        from gparchitect.builders.builder import _build_gpytorch_kernel
+
+        kernel_spec = KernelSpec(
+            kernel_type=KernelType.POLYNOMIAL,
+            polynomial_power=3,
+            polynomial_offset=1.5,
+        )
+        kernel = _build_gpytorch_kernel(kernel_spec, num_features=2)
+
+        assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
+        assert isinstance(kernel.base_kernel, gpytorch.kernels.PolynomialKernel)
+        assert kernel.base_kernel.power == 3
+        assert kernel.base_kernel.offset.item() == pytest.approx(1.5, rel=1e-5)
+
+    def test_infinite_width_bnn_kernel_builds_with_depth(self) -> None:
+        try:
+            import gpytorch
+            from botorch.models.kernels.infinite_width_bnn import InfiniteWidthBNNKernel
+        except ImportError:
+            pytest.skip("gpytorch or botorch not installed")
+
+        from gparchitect.builders.builder import _build_gpytorch_kernel
+
+        kernel_spec = KernelSpec(kernel_type=KernelType.INFINITE_WIDTH_BNN, bnn_depth=5)
+        kernel = _build_gpytorch_kernel(kernel_spec, num_features=3)
+
+        assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
+        assert isinstance(kernel.base_kernel, InfiniteWidthBNNKernel)
+        assert kernel.base_kernel.depth == 5
+
+    def test_exponential_decay_kernel_builds_with_configured_parameters(self) -> None:
+        try:
+            import gpytorch
+            from botorch.models.kernels.exponential_decay import ExponentialDecayKernel
+        except ImportError:
+            pytest.skip("gpytorch or botorch not installed")
+
+        from gparchitect.builders.builder import _build_gpytorch_kernel
+
+        kernel_spec = KernelSpec(
+            kernel_type=KernelType.EXPONENTIAL_DECAY,
+            exponential_decay_power=2.5,
+            exponential_decay_offset=0.3,
+        )
+        kernel = _build_gpytorch_kernel(kernel_spec, num_features=1)
+
+        assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
+        assert isinstance(kernel.base_kernel, ExponentialDecayKernel)
+        assert kernel.base_kernel.power.item() == pytest.approx(2.5, rel=1e-5)
+        assert kernel.base_kernel.offset.item() == pytest.approx(0.3, rel=1e-5)
+
     def test_additive_group_composition_keeps_per_term_scales(self) -> None:
         try:
             import gpytorch

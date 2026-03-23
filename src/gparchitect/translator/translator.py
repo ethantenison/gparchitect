@@ -53,6 +53,8 @@ logger = logging.getLogger(__name__)
 # Keyword → kernel type mapping (ordered by specificity)
 # ---------------------------------------------------------------------------
 _KERNEL_KEYWORDS: list[tuple[re.Pattern[str], KernelType]] = [
+    (re.compile(r"\binfinite[\s\-_]?width\s+bnn\b|\biwbnn\b", re.IGNORECASE), KernelType.INFINITE_WIDTH_BNN),
+    (re.compile(r"\bexponential[\s\-_]?decay\b", re.IGNORECASE), KernelType.EXPONENTIAL_DECAY),
     (re.compile(r"\bspectral\s+mixture\b", re.IGNORECASE), KernelType.SPECTRAL_MIXTURE),
     (re.compile(r"\brational\s+quadratic\b|\brq\b", re.IGNORECASE), KernelType.RQ),
     (re.compile(r"\bmatern.?1[/\-_]?2\b", re.IGNORECASE), KernelType.MATERN_12),
@@ -99,6 +101,20 @@ _FROM_DATA_INIT_PATTERN = re.compile(
     r"\bunevenly\s+spaced\b",
     re.IGNORECASE,
 )
+_PERIOD_LENGTH_PATTERN = re.compile(
+    r"\bperiod(?:\s+length)?\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
+    re.IGNORECASE,
+)
+_POLYNOMIAL_POWER_PATTERN = re.compile(
+    r"\b(?:degree|order|power)\s*(?:=|of)?\s*(\d+)\b",
+    re.IGNORECASE,
+)
+_OFFSET_PATTERN = re.compile(r"\boffset\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE)
+_DEPTH_PATTERN = re.compile(
+    r"\bdepth\s*(?:=|of)?\s*(\d+)\b|\b(\d+)\s*(?:layer|layers)\b",
+    re.IGNORECASE,
+)
+_POWER_PATTERN = re.compile(r"\bpower\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE)
 
 _ARD_SUPPORTED_KERNELS = {
     KernelType.RBF,
@@ -135,6 +151,46 @@ def _detect_spectral_init(instruction: str) -> SpectralMixtureInitialization:
     return SpectralMixtureInitialization.FROM_DATA
 
 
+def _extract_period_length(instruction: str) -> float | None:
+    """Extract an optional Periodic period length from an instruction fragment."""
+    match = _PERIOD_LENGTH_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _extract_polynomial_power(instruction: str) -> int | None:
+    """Extract an optional Polynomial degree from an instruction fragment."""
+    match = _POLYNOMIAL_POWER_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return int(match.group(1))
+
+
+def _extract_offset(instruction: str) -> float | None:
+    """Extract an optional offset parameter from an instruction fragment."""
+    match = _OFFSET_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _extract_depth(instruction: str) -> int | None:
+    """Extract an optional network depth from an instruction fragment."""
+    match = _DEPTH_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return int(match.group(1) or match.group(2))
+
+
+def _extract_power(instruction: str) -> float | None:
+    """Extract an optional power parameter from an instruction fragment."""
+    match = _POWER_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
 def _build_kernel_spec(
     instruction: str,
     kernel_type: KernelType,
@@ -148,9 +204,19 @@ def _build_kernel_spec(
 
     if kernel_type == KernelType.RQ:
         kernel_spec.rq_alpha = _extract_rq_alpha(instruction)
+    elif kernel_type == KernelType.PERIODIC:
+        kernel_spec.period_length = _extract_period_length(instruction)
+    elif kernel_type == KernelType.POLYNOMIAL:
+        kernel_spec.polynomial_power = _extract_polynomial_power(instruction)
+        kernel_spec.polynomial_offset = _extract_offset(instruction)
     elif kernel_type == KernelType.SPECTRAL_MIXTURE:
         kernel_spec.num_mixtures = _extract_num_mixtures(instruction)
         kernel_spec.spectral_init = _detect_spectral_init(instruction)
+    elif kernel_type == KernelType.INFINITE_WIDTH_BNN:
+        kernel_spec.bnn_depth = _extract_depth(instruction)
+    elif kernel_type == KernelType.EXPONENTIAL_DECAY:
+        kernel_spec.exponential_decay_power = _extract_power(instruction)
+        kernel_spec.exponential_decay_offset = _extract_offset(instruction)
 
     return kernel_spec
 

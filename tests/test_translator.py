@@ -33,6 +33,14 @@ class TestTranslateKernelDetection:
         spec = translate_to_dsl("Use a spectral mixture kernel", input_dim=2)
         assert spec.feature_groups[0].kernel.kernel_type == KernelType.SPECTRAL_MIXTURE
 
+    def test_infinite_width_bnn_keyword(self) -> None:
+        spec = translate_to_dsl("Use an infinite width bnn kernel", input_dim=2)
+        assert spec.feature_groups[0].kernel.kernel_type == KernelType.INFINITE_WIDTH_BNN
+
+    def test_exponential_decay_keyword(self) -> None:
+        spec = translate_to_dsl("Use an exponential decay kernel", input_dim=1)
+        assert spec.feature_groups[0].kernel.kernel_type == KernelType.EXPONENTIAL_DECAY
+
     def test_matern_52_keyword(self) -> None:
         spec = translate_to_dsl("Use Matern 5/2 kernel", input_dim=4)
         assert spec.feature_groups[0].kernel.kernel_type == KernelType.MATERN_52
@@ -270,3 +278,29 @@ class TestTranslateKernelSpecificParameters:
         assert spec.feature_groups[0].kernel.rq_alpha == pytest.approx(1.5)
         assert spec.feature_groups[1].kernel.kernel_type == KernelType.SPECTRAL_MIXTURE
         assert spec.feature_groups[1].kernel.num_mixtures == 3
+
+    def test_polynomial_power_and_offset_parsed(self) -> None:
+        spec = translate_to_dsl("Use a polynomial kernel with degree 3 and offset 1.5", input_dim=2)
+        kernel = spec.feature_groups[0].kernel
+        assert kernel.kernel_type == KernelType.POLYNOMIAL
+        assert kernel.polynomial_power == 3
+        assert kernel.polynomial_offset == pytest.approx(1.5)
+
+    def test_periodic_period_length_parsed(self) -> None:
+        spec = translate_to_dsl("Use a periodic kernel with period length 12", input_dim=1)
+        kernel = spec.feature_groups[0].kernel
+        assert kernel.kernel_type == KernelType.PERIODIC
+        assert kernel.period_length == pytest.approx(12.0)
+
+    def test_infinite_width_bnn_depth_parsed(self) -> None:
+        spec = translate_to_dsl("Use an infinite width bnn kernel with depth 5", input_dim=3)
+        kernel = spec.feature_groups[0].kernel
+        assert kernel.kernel_type == KernelType.INFINITE_WIDTH_BNN
+        assert kernel.bnn_depth == 5
+
+    def test_exponential_decay_parameters_parsed(self) -> None:
+        spec = translate_to_dsl("Use an exponential decay kernel with power 2.5 and offset 0.2", input_dim=1)
+        kernel = spec.feature_groups[0].kernel
+        assert kernel.kernel_type == KernelType.EXPONENTIAL_DECAY
+        assert kernel.exponential_decay_power == pytest.approx(2.5)
+        assert kernel.exponential_decay_offset == pytest.approx(0.2)

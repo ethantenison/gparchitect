@@ -84,6 +84,8 @@ def _build_gpytorch_kernel_with_active_dims(
     train_Y=None,  # noqa: ANN001
 ):  # noqa: ANN201
     """Construct a GPyTorch kernel from a KernelSpec and explicit active dimensions."""
+    from botorch.models.kernels.exponential_decay import ExponentialDecayKernel
+    from botorch.models.kernels.infinite_width_bnn import InfiniteWidthBNNKernel
     import gpytorch
 
     resolved_ard_num_dims = len(active_dims) if kernel_spec.ard else ard_num_dims
@@ -139,7 +141,15 @@ def _build_gpytorch_kernel_with_active_dims(
             active_dims=active_dims,
             ard_num_dims=resolved_ard_num_dims,
         ),
-        KernelType.POLYNOMIAL: lambda: gpytorch.kernels.PolynomialKernel(power=2, active_dims=active_dims),
+        KernelType.POLYNOMIAL: lambda: gpytorch.kernels.PolynomialKernel(
+            power=kernel_spec.polynomial_power or 2,
+            active_dims=active_dims,
+        ),
+        KernelType.INFINITE_WIDTH_BNN: lambda: InfiniteWidthBNNKernel(
+            depth=kernel_spec.bnn_depth or 3,
+            active_dims=active_dims,
+        ),
+        KernelType.EXPONENTIAL_DECAY: lambda: ExponentialDecayKernel(active_dims=active_dims),
     }
 
     if kernel_spec.kernel_type not in kernel_map:
@@ -154,6 +164,18 @@ def _build_gpytorch_kernel_with_active_dims(
 
     if kernel_spec.kernel_type == KernelType.RQ and kernel_spec.rq_alpha is not None:
         base_kernel.initialize(alpha=kernel_spec.rq_alpha)
+    if kernel_spec.kernel_type == KernelType.PERIODIC and kernel_spec.period_length is not None:
+        base_kernel.initialize(period_length=kernel_spec.period_length)
+    if kernel_spec.kernel_type == KernelType.POLYNOMIAL and kernel_spec.polynomial_offset is not None:
+        base_kernel.initialize(offset=kernel_spec.polynomial_offset)
+    if kernel_spec.kernel_type == KernelType.EXPONENTIAL_DECAY:
+        init_kwargs: dict[str, float] = {}
+        if kernel_spec.exponential_decay_power is not None:
+            init_kwargs["power"] = kernel_spec.exponential_decay_power
+        if kernel_spec.exponential_decay_offset is not None:
+            init_kwargs["offset"] = kernel_spec.exponential_decay_offset
+        if init_kwargs:
+            base_kernel.initialize(**init_kwargs)
 
     if kernel_spec.children:
         if kernel_spec.composition == CompositionType.ADDITIVE:
