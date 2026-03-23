@@ -178,3 +178,113 @@ def test_exponential_decay_example_runs_end_to_end() -> None:
     kernel_snapshot = log.attempts[0].spec_snapshot["feature_groups"][0]["kernel"]
     assert kernel_snapshot["exponential_decay_power"] == pytest.approx(2.5)
     assert kernel_snapshot["exponential_decay_offset"] == pytest.approx(0.2)
+
+
+def test_multi_feature_group_example_runs_end_to_end() -> None:
+    """Example: multiple feature groups with distinct kernels and local parameters."""
+    _require_runtime_dependencies()
+
+    seasonality_index = [index / 15 for index in range(16)]
+    system_age = [0.05, 0.12, 0.18, 0.25, 0.31, 0.37, 0.44, 0.5, 0.57, 0.63, 0.69, 0.76, 0.82, 0.88, 0.94, 1.0]
+    dataframe = pd.DataFrame(
+        {
+            "seasonality_index": seasonality_index,
+            "system_age": system_age,
+            "target": [
+                0.55 * math.sin(2.0 * math.pi * seasonal * 2.0) + 0.9 / ((4.0 * age) + 1.2) + 0.05
+                for seasonal, age in zip(seasonality_index, system_age)
+            ],
+        }
+    )
+
+    model, log = run_gparchitect(
+        dataframe=dataframe,
+        instruction=(
+            "Use a periodic kernel with period length 0.5 on seasonality_index and an exponential decay "
+            "kernel with power 2.0 and offset 0.15 on system_age."
+        ),
+        input_columns=["seasonality_index", "system_age"],
+        output_columns=["target"],
+        max_retries=0,
+    )
+
+    assert model is not None
+    assert log.final_success is True
+    assert len(log.attempts) == 1
+    assert log.attempts[0].fit_success is True
+    assert log.attempts[0].spec_snapshot["group_composition"] == "hierarchical"
+
+    feature_groups = log.attempts[0].spec_snapshot["feature_groups"]
+    assert len(feature_groups) == 2
+
+    periodic_group = feature_groups[0]
+    decay_group = feature_groups[1]
+
+    assert periodic_group["feature_indices"] == [0]
+    assert periodic_group["kernel"]["kernel_type"] == "Periodic"
+    assert periodic_group["kernel"]["period_length"] == pytest.approx(0.5)
+
+    assert decay_group["feature_indices"] == [1]
+    assert decay_group["kernel"]["kernel_type"] == "ExponentialDecay"
+    assert decay_group["kernel"]["exponential_decay_power"] == pytest.approx(2.0)
+    assert decay_group["kernel"]["exponential_decay_offset"] == pytest.approx(0.15)
+
+
+def test_three_group_mixed_kernel_example_runs_end_to_end() -> None:
+    """Example: three feature groups mixing existing and newly added kernels."""
+    _require_runtime_dependencies()
+
+    trend_feature = [index / 17 for index in range(18)]
+    seasonal_feature = [(index % 6) / 5 for index in range(18)]
+    decay_feature = [0.08 + (0.92 * index / 17) for index in range(18)]
+
+    dataframe = pd.DataFrame(
+        {
+            "trend_feature": trend_feature,
+            "seasonal_feature": seasonal_feature,
+            "decay_feature": decay_feature,
+            "target": [
+                0.4 * trend
+                + 0.35 * math.sin(2.0 * math.pi * seasonal)
+                + 0.75 / ((3.5 * decay) + 1.0)
+                + 0.03
+                for trend, seasonal, decay in zip(trend_feature, seasonal_feature, decay_feature)
+            ],
+        }
+    )
+
+    model, log = run_gparchitect(
+        dataframe=dataframe,
+        instruction=(
+            "Use an rbf kernel on trend_feature, a periodic kernel with period length 0.4 on seasonal_feature, "
+            "and an exponential decay kernel with power 1.8 and offset 0.1 on decay_feature."
+        ),
+        input_columns=["trend_feature", "seasonal_feature", "decay_feature"],
+        output_columns=["target"],
+        max_retries=0,
+    )
+
+    assert model is not None
+    assert log.final_success is True
+    assert len(log.attempts) == 1
+    assert log.attempts[0].fit_success is True
+    assert log.attempts[0].spec_snapshot["group_composition"] == "hierarchical"
+
+    feature_groups = log.attempts[0].spec_snapshot["feature_groups"]
+    assert len(feature_groups) == 3
+
+    first_group = feature_groups[0]
+    second_group = feature_groups[1]
+    third_group = feature_groups[2]
+
+    assert first_group["feature_indices"] == [0]
+    assert first_group["kernel"]["kernel_type"] == "RBF"
+
+    assert second_group["feature_indices"] == [1]
+    assert second_group["kernel"]["kernel_type"] == "Periodic"
+    assert second_group["kernel"]["period_length"] == pytest.approx(0.4)
+
+    assert third_group["feature_indices"] == [2]
+    assert third_group["kernel"]["kernel_type"] == "ExponentialDecay"
+    assert third_group["kernel"]["exponential_decay_power"] == pytest.approx(1.8)
+    assert third_group["kernel"]["exponential_decay_offset"] == pytest.approx(0.1)
