@@ -20,7 +20,7 @@ poetry add gparchitect
 
 ## Requirements
 
-- Python 3.13+
+- Python 3.13.12
 - BoTorch ≥ 0.11
 - GPyTorch ≥ 1.11
 - pandas ≥ 2.0
@@ -62,6 +62,8 @@ print("Success:", experiment_log.final_success)
 If you name different kernels for different input columns, GPArchitect maps those
 names onto the provided `input_columns`. Without an explicit additive or multiplicative
 directive, the default composition is hierarchical: main effects plus interactions.
+If you do not specify feature groups, GPArchitect uses a single kernel across all
+continuous inputs and enables ARD by default for kernels that support it.
 
 ### 3. Inspect the generated DSL
 
@@ -69,7 +71,7 @@ directive, the default composition is hierarchical: main effects plus interactio
 from gparchitect import translate_to_dsl, validate_dsl
 
 spec = translate_to_dsl(
-    instruction="Use a Matern 5/2 kernel with ARD",
+    instruction="Use a Matern 5/2 kernel",
     input_dim=2,
 )
 result = validate_dsl(spec)
@@ -123,7 +125,7 @@ model, log = run_gparchitect(
 ```bash
 # Basic usage
 gparchitect --csv data.csv \
-    --instruction "Use Matern52 with ARD" \
+    --instruction "Use Matern52" \
     --inputs x1,x2,x3 \
     --outputs y
 
@@ -143,7 +145,7 @@ gparchitect --csv data.csv \
 
 GPArchitect automatically retries with a simplified DSL if fitting fails:
 
-1. Disables ARD
+1. Disables ARD when it is currently enabled
 2. Simplifies kernels to Matern52
 3. Removes priors
 4. Switches to SingleTaskGP
@@ -183,7 +185,9 @@ for attempt in experiment_log.attempts:
 | `linear`                          | Linear        |
 | `polynomial`                      | Polynomial    |
 
-Add `ard` or `automatic relevance determination` to enable ARD.
+ARD is enabled by default for kernels that support it. Use `without ard`, `disable ard`,
+or `shared lengthscale` to disable ARD explicitly when you want one shared lengthscale
+across the input dimensions in a group.
 
 Outputs for `SingleTaskGP` and `ModelListGP` are standardized through BoTorch
 outcome transforms during model construction.

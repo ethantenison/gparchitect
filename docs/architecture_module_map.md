@@ -58,6 +58,35 @@ All stages write to:
 
 ## Module Responsibilities
 
+### Grouping Policy
+
+GPArchitect treats feature grouping as part of the DSL translation contract.
+
+- Each natural-language kernel mention maps to one `FeatureGroupSpec`.
+- Column references are resolved only against the provided `input_columns`.
+- A feature stays in the group named by its local kernel clause; it must not bleed into
+  the next kernel mention.
+- Time-like features such as `time`, `date`, `month`, `month_index`, or `time_index`
+  remain singleton groups when they are described in their own kernel clause.
+- Multiple features may share a group when they are named inside the same kernel clause.
+- When no feature groups are resolved from the instruction, translation falls back to a
+  single all-input feature group.
+- When multiple feature groups are present and the instruction does not explicitly request
+  additive or multiplicative composition, the default inter-group composition is
+  hierarchical: main effects plus pairwise interactions.
+- ARD defaults to `True` for kernel families that support per-dimension lengthscales and
+  switches to `False` only when the instruction explicitly disables it.
+
+Kernel construction follows these builder-side rules:
+
+- Leaf kernels are wrapped in `ScaleKernel`.
+- Additive compositions keep per-term `ScaleKernel` wrappers and do not add an extra
+  outer scale around the sum.
+- Multiplicative compositions use a single outer `ScaleKernel` around the full product
+  and do not scale each factor independently.
+- Hierarchical interaction terms are built as scaled products, while their main effects
+  remain individually scaled additive terms.
+
 ### `src/gparchitect/dsl/`
 
 **Responsibility**: Define the GP DSL schema as Pydantic models.

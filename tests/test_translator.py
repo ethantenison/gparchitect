@@ -73,17 +73,29 @@ class TestTranslateModelClassDetection:
 
 
 class TestTranslateARD:
-    def test_no_ard_by_default(self) -> None:
+    def test_ard_enabled_by_default(self) -> None:
         spec = translate_to_dsl("GP model", input_dim=5)
-        assert spec.feature_groups[0].kernel.ard is False
+        assert spec.feature_groups[0].kernel.ard is True
 
-    def test_ard_keyword_enables_ard(self) -> None:
+    def test_ard_keyword_keeps_ard_enabled(self) -> None:
         spec = translate_to_dsl("Use ARD on all inputs", input_dim=5)
         assert spec.feature_groups[0].kernel.ard is True
 
     def test_automatic_relevance_keyword(self) -> None:
         spec = translate_to_dsl("automatic relevance determination", input_dim=3)
         assert spec.feature_groups[0].kernel.ard is True
+
+    def test_disable_ard_keyword_turns_ard_off(self) -> None:
+        spec = translate_to_dsl("Use an RBF kernel without ARD", input_dim=3)
+        assert spec.feature_groups[0].kernel.ard is False
+
+    def test_shared_lengthscale_turns_ard_off(self) -> None:
+        spec = translate_to_dsl("Use a Matern kernel with shared lengthscale", input_dim=3)
+        assert spec.feature_groups[0].kernel.ard is False
+
+    def test_linear_kernel_does_not_enable_ard(self) -> None:
+        spec = translate_to_dsl("Use a linear kernel", input_dim=3)
+        assert spec.feature_groups[0].kernel.ard is False
 
 
 class TestTranslateNoise:
@@ -121,8 +133,10 @@ class TestTranslateComposition:
         assert len(spec.feature_groups) == 2
         assert spec.feature_groups[0].feature_indices == [0]
         assert spec.feature_groups[0].kernel.kernel_type == KernelType.RBF
+        assert spec.feature_groups[0].kernel.ard is True
         assert spec.feature_groups[1].feature_indices == [1]
         assert spec.feature_groups[1].kernel.kernel_type == KernelType.MATERN_12
+        assert spec.feature_groups[1].kernel.ard is True
 
     def test_feature_specific_kernels_respect_additive_override(self) -> None:
         spec = translate_to_dsl(
@@ -154,12 +168,24 @@ class TestTranslateComposition:
 
         assert spec.feature_groups[0].feature_indices == [0]
         assert spec.feature_groups[0].kernel.kernel_type == KernelType.RBF
+        assert spec.feature_groups[0].kernel.ard is True
 
         assert spec.feature_groups[1].feature_indices == [1, 2]
         assert spec.feature_groups[1].kernel.kernel_type == KernelType.MATERN_32
+        assert spec.feature_groups[1].kernel.ard is True
 
         assert spec.feature_groups[2].feature_indices == [3, 4]
         assert spec.feature_groups[2].kernel.kernel_type == KernelType.RBF
+        assert spec.feature_groups[2].kernel.ard is True
+
+    def test_feature_specific_kernels_can_disable_ard_globally(self) -> None:
+        spec = translate_to_dsl(
+            "Use an rbf kernel on x1 and a matern1/2 kernel on x2 without ARD.",
+            input_dim=2,
+            input_feature_names=["x1", "x2"],
+        )
+
+        assert all(group.kernel.ard is False for group in spec.feature_groups)
 
 
 class TestTranslateStructure:

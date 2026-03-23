@@ -9,6 +9,7 @@ fails, it revises the DSL specification, retries, and logs all changes.
 
 Continuous input columns are min-max scaled before model construction, and single-task
 outputs are standardized through BoTorch outcome transforms during fitting.
+Kernels that support ARD use it by default unless the instruction explicitly disables it.
 
 ## Architecture
 
@@ -59,12 +60,15 @@ Feature-specific kernel instructions are resolved against the provided `input_co
 When multiple per-feature kernels are specified without an explicit additive or
 multiplicative directive, GPArchitect uses a hierarchical default that includes the
 main effects and their interaction.
+If no feature groups are specified, GPArchitect falls back to a single kernel across all
+continuous inputs with ARD enabled when the kernel supports it. Use phrases such as
+`without ARD` or `shared lengthscale` to disable ARD explicitly.
 
 ## CLI
 
 ```bash
 gparchitect --csv data.csv \
-    --instruction "Use Matern52 with ARD" \
+    --instruction "Use Matern52" \
     --inputs x1,x2,x3 \
     --outputs y
 ```

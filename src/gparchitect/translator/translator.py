@@ -23,7 +23,7 @@ Non-obvious design decisions:
       deterministic output without external API calls.
     - Unrecognised instructions fall back to a safe SingleTaskGP + Matern52 default.
     - Kernel keywords are matched case-insensitively against the instruction string.
-    - ARD is enabled when the instruction mentions "ard" or "automatic relevance".
+        - ARD is enabled by default for kernels that support it and can be disabled explicitly.
 
 What this module does NOT do:
     - It does not call any external language model or API.
@@ -72,10 +72,23 @@ _MODEL_KEYWORDS: list[tuple[re.Pattern[str], ModelClass]] = [
 ]
 
 _ARD_PATTERN = re.compile(r"\bard\b|\bautomatic.?relevance\b", re.IGNORECASE)
+_DISABLE_ARD_PATTERN = re.compile(
+    r"\b(?:no|without|disable|disabled|turn off|off)\s+ard\b|"
+    r"\bshared\s+lengthscale\b|\bsingle\s+lengthscale\b|\bsame\s+lengthscale\b",
+    re.IGNORECASE,
+)
 _FIXED_NOISE_PATTERN = re.compile(r"\bfixed.?noise\b|\bnoise.?free\b|\bnoiseless\b", re.IGNORECASE)
 _ADDITIVE_PATTERN = re.compile(r"\badditive\b|\bsum.?of.?kernel\b", re.IGNORECASE)
 _MULTIPLICATIVE_PATTERN = re.compile(r"\bmultiplicative\b|\bproduct.?of.?kernel\b", re.IGNORECASE)
 _FEATURE_PREPOSITION_PATTERN = re.compile(r"\b(?:on|for|across|over|applied to|using)\b", re.IGNORECASE)
+
+_ARD_SUPPORTED_KERNELS = {
+    KernelType.RBF,
+    KernelType.MATERN_12,
+    KernelType.MATERN_32,
+    KernelType.MATERN_52,
+    KernelType.PERIODIC,
+}
 
 
 def _match_kernel_type(instruction: str) -> KernelType | None:
@@ -117,6 +130,15 @@ def _detect_noise(instruction: str) -> NoiseSpec:
     return NoiseSpec(fixed=False)
 
 
+def _resolve_ard_setting(instruction: str, kernel_type: KernelType) -> bool:
+    """Return whether ARD should be enabled for a kernel type."""
+    if kernel_type not in _ARD_SUPPORTED_KERNELS:
+        return False
+    if _DISABLE_ARD_PATTERN.search(instruction):
+        return False
+    return True
+
+
 def _find_referenced_features(clause: str, input_feature_names: list[str]) -> list[int]:
     """Return continuous feature indices referenced in a clause by exact column name."""
     clause_lower = clause.lower()
@@ -151,7 +173,6 @@ def _find_kernel_mentions(instruction: str) -> list[tuple[int, int, KernelType]]
 def _extract_feature_groups(
     instruction: str,
     input_feature_names: list[str] | None,
-    use_ard: bool,
 ) -> list[FeatureGroupSpec]:
     """Extract feature-specific kernel groups from natural language when column names are available."""
     if not input_feature_names:
@@ -178,7 +199,10 @@ def _extract_feature_groups(
             FeatureGroupSpec(
                 name="_".join(input_feature_names[index] for index in feature_indices),
                 feature_indices=feature_indices,
-                kernel=KernelSpec(kernel_type=kernel_type, ard=use_ard),
+                kernel=KernelSpec(
+                    kernel_type=kernel_type,
+                    ard=_resolve_ard_setting(instruction, kernel_type),
+                ),
             )
         )
 
@@ -215,8 +239,8 @@ def translate_to_dsl(
     model_class = _detect_model_class(instruction, task_feature_index)
     explicit_composition = _detect_explicit_composition(instruction)
     noise = _detect_noise(instruction)
-    use_ard = bool(_ARD_PATTERN.search(instruction))
-    feature_groups = _extract_feature_groups(instruction, input_feature_names, use_ard)
+    use_ard = _resolve_ard_setting(instruction, kernel_type)
+    feature_groups = _extract_feature_groups(instruction, input_feature_names)
 
     if feature_groups:
         composition = explicit_composition
