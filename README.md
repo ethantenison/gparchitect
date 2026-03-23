@@ -10,6 +10,8 @@ fails, it revises the DSL specification, retries, and logs all changes.
 Continuous input columns are min-max scaled before model construction, and single-task
 outputs are standardized through BoTorch outcome transforms during fitting.
 Kernels that support ARD use it by default unless the instruction explicitly disables it.
+Spectral mixture kernels are initialized from training data, with optional empirical-spectrum
+initialization when requested in the instruction.
 
 ## Architecture
 
@@ -63,6 +65,9 @@ main effects and their interaction.
 If no feature groups are specified, GPArchitect falls back to a single kernel across all
 continuous inputs with ARD enabled when the kernel supports it. Use phrases such as
 `without ARD` or `shared lengthscale` to disable ARD explicitly.
+RQ kernels accept an optional `alpha` value, and spectral mixture kernels accept an optional
+number of mixtures plus initialization hints such as `initialized from data` or
+`initialized from the empirical spectrum`.
 
 ## CLI
 

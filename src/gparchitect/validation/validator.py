@@ -33,7 +33,13 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass, field
 
-from gparchitect.dsl.schema import CompositionType, GPSpec, KernelType, ModelClass
+from gparchitect.dsl.schema import (
+    CompositionType,
+    GPSpec,
+    KernelType,
+    ModelClass,
+    SpectralMixtureInitialization,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -159,6 +165,30 @@ def _check_kernel_spec(group_name: str, kernel, result: ValidationResult) -> Non
     if kernel.ard and not kernel.children:
         # ARD on composed kernels is not directly supported at the top level
         pass
+
+    if kernel.kernel_type == KernelType.RQ and kernel.rq_alpha is not None and kernel.rq_alpha <= 0:
+        result.errors.append(
+            f"Feature group '{group_name}': RQ alpha must be > 0, got {kernel.rq_alpha}."
+        )
+
+    if kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
+        if kernel.num_mixtures is not None and kernel.num_mixtures < 1:
+            result.errors.append(
+                f"Feature group '{group_name}': SpectralMixture num_mixtures must be >= 1, "
+                f"got {kernel.num_mixtures}."
+            )
+        if kernel.spectral_init not in {
+            SpectralMixtureInitialization.FROM_DATA,
+            SpectralMixtureInitialization.FROM_EMPIRICAL_SPECTRUM,
+        }:
+            result.errors.append(
+                f"Feature group '{group_name}': unsupported spectral_init '{kernel.spectral_init}'."
+            )
+        if not kernel.ard:
+            result.warnings.append(
+                f"Feature group '{group_name}': SpectralMixtureKernel requires ard_num_dims to match the "
+                "active dimensionality; the builder will enforce this regardless of the DSL ard flag."
+            )
 
     for child in kernel.children:
         _check_kernel_spec(group_name, child, result)

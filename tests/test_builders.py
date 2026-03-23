@@ -78,6 +78,99 @@ class TestPrepareInputs:
 
 
 class TestCovarianceBuilder:
+    def test_rq_kernel_builds_with_configured_alpha(self) -> None:
+        try:
+            import gpytorch
+        except ImportError:
+            pytest.skip("gpytorch not installed")
+
+        from gparchitect.builders.builder import _build_gpytorch_kernel
+
+        kernel_spec = KernelSpec(kernel_type=KernelType.RQ, ard=True, rq_alpha=0.75)
+        kernel = _build_gpytorch_kernel(kernel_spec, num_features=2)
+
+        assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
+        assert isinstance(kernel.base_kernel, gpytorch.kernels.RQKernel)
+        assert kernel.base_kernel.alpha.item() == pytest.approx(0.75, rel=1e-5)
+
+    def test_spectral_mixture_kernel_uses_requested_num_mixtures_without_scale(self) -> None:
+        try:
+            import gpytorch
+            import torch
+        except ImportError:
+            pytest.skip("gpytorch or torch not installed")
+
+        from gparchitect.builders.builder import _build_covariance_module, _prepare_inputs
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="all",
+                    feature_indices=[0, 1],
+                    kernel=KernelSpec(kernel_type=KernelType.SPECTRAL_MIXTURE, num_mixtures=3),
+                )
+            ],
+            noise=NoiseSpec(),
+            input_dim=2,
+            output_dim=1,
+        )
+
+        train_X = torch.tensor([[0.0, 0.0], [0.5, 0.25], [1.0, 1.0]], dtype=torch.double)
+        train_Y = torch.tensor([[0.0], [0.5], [1.0]], dtype=torch.double)
+        full_X, full_Y, feature_index_map = _prepare_inputs(spec, train_X, train_Y)
+        covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
+
+        assert isinstance(covar_module, gpytorch.kernels.SpectralMixtureKernel)
+        assert covar_module.num_mixtures == 3
+        assert tuple(int(value) for value in covar_module.active_dims) == (0, 1)
+
+    def test_spectral_mixture_empirical_spectrum_initializer_is_used(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        try:
+            import gpytorch
+            import torch
+        except ImportError:
+            pytest.skip("gpytorch or torch not installed")
+
+        from gparchitect.builders.builder import _build_covariance_module, _prepare_inputs
+
+        called = {"empspect": False}
+        def _record_initialize(self, train_x, train_y):  # noqa: ANN001, ANN202
+            called["empspect"] = True
+            raise ImportError("optional empirical-spectrum dependencies unavailable in test")
+
+        monkeypatch.setattr(
+            gpytorch.kernels.SpectralMixtureKernel,
+            "initialize_from_data_empspect",
+            _record_initialize,
+        )
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="all",
+                    feature_indices=[0],
+                    kernel=KernelSpec(
+                        kernel_type=KernelType.SPECTRAL_MIXTURE,
+                        num_mixtures=2,
+                        spectral_init="from_empirical_spectrum",
+                    ),
+                )
+            ],
+            noise=NoiseSpec(),
+            input_dim=1,
+            output_dim=1,
+        )
+
+        train_X = torch.tensor([[0.0], [0.5], [1.0], [1.5]], dtype=torch.double)
+        train_Y = torch.tensor([[0.0], [1.0], [0.0], [-1.0]], dtype=torch.double)
+        full_X, full_Y, feature_index_map = _prepare_inputs(spec, train_X, train_Y)
+
+        _build_covariance_module(spec, feature_index_map, full_X, full_Y)
+
+        assert called["empspect"] is True
+
     def test_additive_group_composition_keeps_per_term_scales(self) -> None:
         try:
             import gpytorch

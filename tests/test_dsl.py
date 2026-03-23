@@ -15,6 +15,7 @@ from gparchitect.dsl.schema import (
     ModelClass,
     NoiseSpec,
     PriorSpec,
+    SpectralMixtureInitialization,
 )
 
 
@@ -83,6 +84,23 @@ class TestKernelSpec:
         assert data["kernel_type"] == "Matern32"
         assert data["ard"] is True
         assert data["lengthscale_prior"]["distribution"] == "Normal"
+
+    def test_rq_alpha_serializes(self) -> None:
+        kernel = KernelSpec(kernel_type=KernelType.RQ, rq_alpha=0.75)
+        data = json.loads(kernel.model_dump_json())
+        assert data["kernel_type"] == "RQ"
+        assert data["rq_alpha"] == pytest.approx(0.75)
+
+    def test_spectral_mixture_fields_serialize(self) -> None:
+        kernel = KernelSpec(
+            kernel_type=KernelType.SPECTRAL_MIXTURE,
+            num_mixtures=4,
+            spectral_init=SpectralMixtureInitialization.FROM_EMPIRICAL_SPECTRUM,
+        )
+        data = json.loads(kernel.model_dump_json())
+        assert data["kernel_type"] == "SpectralMixture"
+        assert data["num_mixtures"] == 4
+        assert data["spectral_init"] == "from_empirical_spectrum"
 
 
 class TestFeatureGroupSpec:

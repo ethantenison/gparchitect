@@ -25,6 +25,14 @@ class TestTranslateKernelDetection:
         spec = translate_to_dsl("Use a squared exponential kernel", input_dim=2)
         assert spec.feature_groups[0].kernel.kernel_type == KernelType.RBF
 
+    def test_rq_keyword(self) -> None:
+        spec = translate_to_dsl("Use a rational quadratic kernel", input_dim=2)
+        assert spec.feature_groups[0].kernel.kernel_type == KernelType.RQ
+
+    def test_spectral_mixture_keyword(self) -> None:
+        spec = translate_to_dsl("Use a spectral mixture kernel", input_dim=2)
+        assert spec.feature_groups[0].kernel.kernel_type == KernelType.SPECTRAL_MIXTURE
+
     def test_matern_52_keyword(self) -> None:
         spec = translate_to_dsl("Use Matern 5/2 kernel", input_dim=4)
         assert spec.feature_groups[0].kernel.kernel_type == KernelType.MATERN_52
@@ -96,6 +104,10 @@ class TestTranslateARD:
     def test_linear_kernel_does_not_enable_ard(self) -> None:
         spec = translate_to_dsl("Use a linear kernel", input_dim=3)
         assert spec.feature_groups[0].kernel.ard is False
+
+    def test_spectral_mixture_keeps_required_ard(self) -> None:
+        spec = translate_to_dsl("Use a spectral mixture kernel without ARD", input_dim=3)
+        assert spec.feature_groups[0].kernel.ard is True
 
 
 class TestTranslateNoise:
@@ -228,3 +240,33 @@ class TestTranslateStructure:
         spec = translate_to_dsl("multitask GP", input_dim=5, output_dim=3, task_feature_index=4)
         assert spec.multitask_rank is not None
         assert spec.multitask_rank >= 1
+
+
+class TestTranslateKernelSpecificParameters:
+    def test_rq_alpha_parsed(self) -> None:
+        spec = translate_to_dsl("Use an RQ kernel with alpha 0.75", input_dim=2)
+        assert spec.feature_groups[0].kernel.rq_alpha == pytest.approx(0.75)
+
+    def test_spectral_mixture_num_mixtures_parsed(self) -> None:
+        spec = translate_to_dsl("Use a 4 component spectral mixture kernel", input_dim=2)
+        assert spec.feature_groups[0].kernel.num_mixtures == 4
+
+    def test_spectral_mixture_empirical_spectrum_init_parsed(self) -> None:
+        spec = translate_to_dsl(
+            "Use a spectral mixture kernel with 3 mixtures initialized from the empirical spectrum",
+            input_dim=2,
+        )
+        assert spec.feature_groups[0].kernel.num_mixtures == 3
+        assert spec.feature_groups[0].kernel.spectral_init.value == "from_empirical_spectrum"
+
+    def test_feature_specific_kernel_params_stay_local(self) -> None:
+        spec = translate_to_dsl(
+            "Use an RQ kernel with alpha 1.5 on x1 and a 3 component spectral mixture kernel on x2.",
+            input_dim=2,
+            input_feature_names=["x1", "x2"],
+        )
+
+        assert spec.feature_groups[0].kernel.kernel_type == KernelType.RQ
+        assert spec.feature_groups[0].kernel.rq_alpha == pytest.approx(1.5)
+        assert spec.feature_groups[1].kernel.kernel_type == KernelType.SPECTRAL_MIXTURE
+        assert spec.feature_groups[1].kernel.num_mixtures == 3

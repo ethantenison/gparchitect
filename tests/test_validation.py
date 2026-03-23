@@ -221,6 +221,22 @@ class TestValidatePriors:
         assert result.is_valid
 
 
+class TestValidateKernelSpecificParameters:
+    def test_rq_alpha_must_be_positive(self) -> None:
+        spec = _make_simple_spec()
+        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.RQ, rq_alpha=0.0)
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("RQ alpha" in error for error in result.errors)
+
+    def test_spectral_mixture_num_mixtures_must_be_positive(self) -> None:
+        spec = _make_simple_spec()
+        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.SPECTRAL_MIXTURE, num_mixtures=0)
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("num_mixtures" in error for error in result.errors)
+
+
 class TestValidateOrRaise:
     def test_valid_spec_does_not_raise(self) -> None:
         spec = _make_simple_spec()

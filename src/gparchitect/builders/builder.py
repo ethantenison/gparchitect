@@ -39,7 +39,7 @@ What this module does NOT do:
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from gparchitect.dsl.schema import (
     CompositionType,
@@ -47,6 +47,7 @@ from gparchitect.dsl.schema import (
     KernelSpec,
     KernelType,
     ModelClass,
+    SpectralMixtureInitialization,
 )
 
 if TYPE_CHECKING:
@@ -79,14 +80,42 @@ def _build_gpytorch_kernel_with_active_dims(
     ard_num_dims: int | None = None,
     *,
     wrap_in_scale: bool = True,
+    train_X=None,  # noqa: ANN001
+    train_Y=None,  # noqa: ANN001
 ):  # noqa: ANN201
     """Construct a GPyTorch kernel from a KernelSpec and explicit active dimensions."""
     import gpytorch
 
     resolved_ard_num_dims = len(active_dims) if kernel_spec.ard else ard_num_dims
 
+    if kernel_spec.kernel_type == KernelType.SPECTRAL_MIXTURE:
+        num_mixtures = kernel_spec.num_mixtures or 4
+        base_kernel = gpytorch.kernels.SpectralMixtureKernel(
+            num_mixtures=num_mixtures,
+            ard_num_dims=len(active_dims),
+            active_dims=active_dims,
+        )
+        if train_X is not None and train_Y is not None:
+            if kernel_spec.spectral_init == SpectralMixtureInitialization.FROM_EMPIRICAL_SPECTRUM:
+                try:
+                    base_kernel.initialize_from_data_empspect(train_X, _kernel_initialization_target(train_Y))
+                except ImportError as exc:
+                    logger.warning(
+                        "Empirical-spectrum SpectralMixture initialization is unavailable (%s); "
+                        "falling back to initialize_from_data.",
+                        exc,
+                    )
+                    base_kernel.initialize_from_data(train_X, _kernel_initialization_target(train_Y))
+            else:
+                base_kernel.initialize_from_data(train_X, _kernel_initialization_target(train_Y))
+        return base_kernel
+
     kernel_map = {
         KernelType.RBF: lambda: gpytorch.kernels.RBFKernel(
+            ard_num_dims=resolved_ard_num_dims,
+            active_dims=active_dims,
+        ),
+        KernelType.RQ: lambda: gpytorch.kernels.RQKernel(
             ard_num_dims=resolved_ard_num_dims,
             active_dims=active_dims,
         ),
@@ -123,29 +152,49 @@ def _build_gpytorch_kernel_with_active_dims(
     else:
         base_kernel = kernel_map[kernel_spec.kernel_type]()
 
+    if kernel_spec.kernel_type == KernelType.RQ and kernel_spec.rq_alpha is not None:
+        base_kernel.initialize(alpha=kernel_spec.rq_alpha)
+
     if kernel_spec.children:
         if kernel_spec.composition == CompositionType.ADDITIVE:
             child_kernels = [
-                _build_gpytorch_kernel_with_active_dims(child, active_dims)
+                _build_gpytorch_kernel_with_active_dims(
+                    child,
+                    active_dims,
+                    train_X=train_X,
+                    train_Y=train_Y,
+                )
                 for child in kernel_spec.children
             ]
-            return gpytorch.kernels.AdditiveKernel(*child_kernels)
+            return gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
 
         child_kernels = [
             _build_gpytorch_kernel_with_active_dims(
                 child,
                 active_dims,
                 wrap_in_scale=kernel_spec.composition != CompositionType.MULTIPLICATIVE,
+                train_X=train_X,
+                train_Y=train_Y,
             )
             for child in kernel_spec.children
         ]
         if kernel_spec.composition == CompositionType.MULTIPLICATIVE:
-            composed = gpytorch.kernels.ProductKernel(*child_kernels)
+            composed = gpytorch.kernels.ProductKernel(*cast(list[Any], child_kernels))
         else:
-            composed = gpytorch.kernels.AdditiveKernel(*child_kernels)
+            composed = gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
         return gpytorch.kernels.ScaleKernel(composed) if wrap_in_scale else composed
 
-    return gpytorch.kernels.ScaleKernel(base_kernel) if wrap_in_scale else base_kernel
+    should_wrap = wrap_in_scale and kernel_spec.kernel_type != KernelType.SPECTRAL_MIXTURE
+    return gpytorch.kernels.ScaleKernel(base_kernel) if should_wrap else base_kernel
+
+
+def _kernel_initialization_target(train_Y):  # noqa: ANN201, ANN001
+    """Reduce training targets to the shape expected by kernel initializers."""
+    if train_Y.ndim == 1:
+        return train_Y
+    if train_Y.shape[-1] == 1:
+        return train_Y.squeeze(-1)
+    return train_Y[:, 0]
 
 
 def _build_group_kernel(
@@ -153,13 +202,26 @@ def _build_group_kernel(
     feature_index_map: dict[int, int],
     *,
     wrap_in_scale: bool = True,
+    train_X=None,  # noqa: ANN001
+    train_Y=None,  # noqa: ANN001
 ):  # noqa: ANN001, ANN201
     """Build a covariance kernel for a single feature group."""
     active_dims = tuple(feature_index_map[index] for index in group.feature_indices)
-    return _build_gpytorch_kernel_with_active_dims(group.kernel, active_dims, wrap_in_scale=wrap_in_scale)
+    return _build_gpytorch_kernel_with_active_dims(
+        group.kernel,
+        active_dims,
+        wrap_in_scale=wrap_in_scale,
+        train_X=train_X,
+        train_Y=train_Y,
+    )
 
 
-def _build_covariance_module(spec: GPSpec, feature_index_map: dict[int, int]):  # noqa: ANN201
+def _build_covariance_module(
+    spec: GPSpec,
+    feature_index_map: dict[int, int],
+    train_X=None,
+    train_Y=None,
+):  # noqa: ANN001, ANN201
     """Build the combined covariance module from all feature groups.
 
     Args:
@@ -170,7 +232,10 @@ def _build_covariance_module(spec: GPSpec, feature_index_map: dict[int, int]):  
     """
     import gpytorch
 
-    group_kernels = [_build_group_kernel(group, feature_index_map) for group in spec.feature_groups]
+    group_kernels = [
+        _build_group_kernel(group, feature_index_map, train_X=train_X, train_Y=train_Y)
+        for group in spec.feature_groups
+    ]
 
     if len(group_kernels) == 1:
         return group_kernels[0]
@@ -179,23 +244,51 @@ def _build_covariance_module(spec: GPSpec, feature_index_map: dict[int, int]):  
         interaction_terms = []
         for left_index, left_group in enumerate(spec.feature_groups):
             for right_group in spec.feature_groups[left_index + 1 :]:
+                interaction_components = cast(
+                    list[Any],
+                    [
+                        _build_group_kernel(
+                            left_group,
+                            feature_index_map,
+                            wrap_in_scale=False,
+                            train_X=train_X,
+                            train_Y=train_Y,
+                        ),
+                        _build_group_kernel(
+                            right_group,
+                            feature_index_map,
+                            wrap_in_scale=False,
+                            train_X=train_X,
+                            train_Y=train_Y,
+                        ),
+                    ],
+                )
                 interaction_terms.append(
                     gpytorch.kernels.ScaleKernel(
-                        gpytorch.kernels.ProductKernel(
-                            _build_group_kernel(left_group, feature_index_map, wrap_in_scale=False),
-                            _build_group_kernel(right_group, feature_index_map, wrap_in_scale=False),
-                        )
+                        gpytorch.kernels.ProductKernel(*interaction_components)
                     )
                 )
-        return gpytorch.kernels.AdditiveKernel(*(group_kernels + interaction_terms))
+        combined_kernels = cast(list[Any], group_kernels + interaction_terms)
+        return gpytorch.kernels.AdditiveKernel(*combined_kernels)
 
     if spec.group_composition == CompositionType.MULTIPLICATIVE:
-        return gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.ProductKernel(
-                *[_build_group_kernel(group, feature_index_map, wrap_in_scale=False) for group in spec.feature_groups]
-            )
+        product_kernels = cast(
+            list[Any],
+            [
+                _build_group_kernel(
+                    group,
+                    feature_index_map,
+                    wrap_in_scale=False,
+                    train_X=train_X,
+                    train_Y=train_Y,
+                )
+                for group in spec.feature_groups
+            ],
         )
-    return gpytorch.kernels.AdditiveKernel(*group_kernels)
+        return gpytorch.kernels.ScaleKernel(
+            gpytorch.kernels.ProductKernel(*product_kernels)
+        )
+    return gpytorch.kernels.AdditiveKernel(*cast(list[Any], group_kernels))
 
 
 def _prepare_inputs(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.Tensor"):  # noqa: ANN201
@@ -250,7 +343,7 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
     logger.info("Building model: class=%s, input_shape=%s", spec.model_class.value, tuple(full_X.shape))
 
     if spec.model_class == ModelClass.SINGLE_TASK_GP:
-        covar_module = _build_covariance_module(spec, feature_index_map)
+        covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
         likelihood = _build_likelihood(spec)
         model = botorch.models.SingleTaskGP(
             train_X=full_X,
@@ -281,11 +374,12 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
     elif spec.model_class == ModelClass.MODEL_LIST_GP:
         individual_models = []
         for output_idx in range(spec.output_dim):
-            covar_module = _build_covariance_module(spec, feature_index_map)
+            output_train_Y = full_Y[:, output_idx : output_idx + 1]
+            covar_module = _build_covariance_module(spec, feature_index_map, full_X, output_train_Y)
             likelihood = _build_likelihood(spec)
             single_model = botorch.models.SingleTaskGP(
                 train_X=full_X,
-                train_Y=full_Y[:, output_idx : output_idx + 1],
+                train_Y=output_train_Y,
                 covar_module=covar_module,
                 likelihood=likelihood,
                 outcome_transform=Standardize(m=1),
@@ -310,11 +404,12 @@ def _build_likelihood(spec: GPSpec):  # noqa: ANN201
         A gpytorch.likelihoods.Likelihood instance.
     """
     import gpytorch
+    import torch
 
     if spec.noise.fixed and spec.noise.noise_value is not None:
         noise_val = spec.noise.noise_value
         likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        likelihood.noise = noise_val
+        likelihood.noise = torch.tensor(noise_val, dtype=torch.double)
         likelihood.noise_covar.raw_noise.requires_grad_(False)
         return likelihood
 

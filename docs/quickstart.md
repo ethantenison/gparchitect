@@ -178,16 +178,21 @@ for attempt in experiment_log.attempts:
 | Keyword in instruction            | Kernel type   |
 |:--------------------------------- |:------------- |
 | `rbf`, `squared exponential`      | RBF           |
+| `rq`, `rational quadratic`        | Rational Quadratic |
 | `matern`, `matern 5/2`            | Matern 5/2    |
 | `matern 3/2`                      | Matern 3/2    |
 | `matern 1/2`                      | Matern 1/2    |
 | `periodic`                        | Periodic      |
 | `linear`                          | Linear        |
 | `polynomial`                      | Polynomial    |
+| `spectral mixture`                | Spectral Mixture |
 
 ARD is enabled by default for kernels that support it. Use `without ard`, `disable ard`,
 or `shared lengthscale` to disable ARD explicitly when you want one shared lengthscale
 across the input dimensions in a group.
+For kernel-specific parameters, phrases like `alpha 0.75` are applied to RQ kernels, and
+phrases like `4 component spectral mixture kernel` or `initialized from the empirical spectrum`
+configure Spectral Mixture kernels.
 
 Outputs for `SingleTaskGP` and `ModelListGP` are standardized through BoTorch
 outcome transforms during model construction.

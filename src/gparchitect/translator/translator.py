@@ -44,6 +44,7 @@ from gparchitect.dsl.schema import (
     KernelType,
     ModelClass,
     NoiseSpec,
+    SpectralMixtureInitialization,
 )
 
 logger = logging.getLogger(__name__)
@@ -52,6 +53,8 @@ logger = logging.getLogger(__name__)
 # Keyword → kernel type mapping (ordered by specificity)
 # ---------------------------------------------------------------------------
 _KERNEL_KEYWORDS: list[tuple[re.Pattern[str], KernelType]] = [
+    (re.compile(r"\bspectral\s+mixture\b", re.IGNORECASE), KernelType.SPECTRAL_MIXTURE),
+    (re.compile(r"\brational\s+quadratic\b|\brq\b", re.IGNORECASE), KernelType.RQ),
     (re.compile(r"\bmatern.?1[/\-_]?2\b", re.IGNORECASE), KernelType.MATERN_12),
     (re.compile(r"\bmatern.?3[/\-_]?2\b", re.IGNORECASE), KernelType.MATERN_32),
     (re.compile(r"\bmatern.?5[/\-_]?2\b", re.IGNORECASE), KernelType.MATERN_52),
@@ -81,14 +84,75 @@ _FIXED_NOISE_PATTERN = re.compile(r"\bfixed.?noise\b|\bnoise.?free\b|\bnoiseless
 _ADDITIVE_PATTERN = re.compile(r"\badditive\b|\bsum.?of.?kernel\b", re.IGNORECASE)
 _MULTIPLICATIVE_PATTERN = re.compile(r"\bmultiplicative\b|\bproduct.?of.?kernel\b", re.IGNORECASE)
 _FEATURE_PREPOSITION_PATTERN = re.compile(r"\b(?:on|for|across|over|applied to|using)\b", re.IGNORECASE)
+_RQ_ALPHA_PATTERN = re.compile(r"\balpha\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE)
+_NUM_MIXTURES_PATTERN = re.compile(
+    r"\b(?:num(?:ber)?\s+of\s+mixtures?|n[_\- ]?mixtures?)\s*(?:=|of)?\s*(\d+)\b|"
+    r"\b(\d+)\s*(?:component|components|mixture|mixtures)\b",
+    re.IGNORECASE,
+)
+_EMPIRICAL_SPECTRUM_PATTERN = re.compile(
+    r"\b(?:emp(?:irical)?\s+spectrum|empspect|evenly\s+spaced)\b",
+    re.IGNORECASE,
+)
+_FROM_DATA_INIT_PATTERN = re.compile(
+    r"\b(?:initialize|initialized|initialise|initialised|init)\w*\s+(?:it\s+)?from\s+data\b|"
+    r"\bunevenly\s+spaced\b",
+    re.IGNORECASE,
+)
 
 _ARD_SUPPORTED_KERNELS = {
     KernelType.RBF,
+    KernelType.RQ,
     KernelType.MATERN_12,
     KernelType.MATERN_32,
     KernelType.MATERN_52,
     KernelType.PERIODIC,
 }
+
+
+def _extract_rq_alpha(instruction: str) -> float | None:
+    """Extract an optional RQ alpha value from an instruction fragment."""
+    match = _RQ_ALPHA_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _extract_num_mixtures(instruction: str) -> int | None:
+    """Extract an optional Spectral Mixture component count."""
+    match = _NUM_MIXTURES_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return int(match.group(1) or match.group(2))
+
+
+def _detect_spectral_init(instruction: str) -> SpectralMixtureInitialization:
+    """Detect the preferred Spectral Mixture initialization strategy."""
+    if _EMPIRICAL_SPECTRUM_PATTERN.search(instruction):
+        return SpectralMixtureInitialization.FROM_EMPIRICAL_SPECTRUM
+    if _FROM_DATA_INIT_PATTERN.search(instruction):
+        return SpectralMixtureInitialization.FROM_DATA
+    return SpectralMixtureInitialization.FROM_DATA
+
+
+def _build_kernel_spec(
+    instruction: str,
+    kernel_type: KernelType,
+    *,
+    ard_instruction: str | None = None,
+) -> KernelSpec:
+    """Build a kernel spec with any kernel-specific parameters parsed from text."""
+    ard_source = instruction if ard_instruction is None else ard_instruction
+    ard = True if kernel_type == KernelType.SPECTRAL_MIXTURE else _resolve_ard_setting(ard_source, kernel_type)
+    kernel_spec = KernelSpec(kernel_type=kernel_type, ard=ard)
+
+    if kernel_type == KernelType.RQ:
+        kernel_spec.rq_alpha = _extract_rq_alpha(instruction)
+    elif kernel_type == KernelType.SPECTRAL_MIXTURE:
+        kernel_spec.num_mixtures = _extract_num_mixtures(instruction)
+        kernel_spec.spectral_init = _detect_spectral_init(instruction)
+
+    return kernel_spec
 
 
 def _match_kernel_type(instruction: str) -> KernelType | None:
@@ -132,6 +196,8 @@ def _detect_noise(instruction: str) -> NoiseSpec:
 
 def _resolve_ard_setting(instruction: str, kernel_type: KernelType) -> bool:
     """Return whether ARD should be enabled for a kernel type."""
+    if kernel_type == KernelType.SPECTRAL_MIXTURE:
+        return True
     if kernel_type not in _ARD_SUPPORTED_KERNELS:
         return False
     if _DISABLE_ARD_PATTERN.search(instruction):
@@ -181,6 +247,9 @@ def _extract_feature_groups(
     feature_groups: list[FeatureGroupSpec] = []
     kernel_mentions = _find_kernel_mentions(instruction)
     for index, (kernel_start, kernel_end, kernel_type) in enumerate(kernel_mentions):
+        clause_start = 0
+        if index > 0:
+            clause_start = kernel_mentions[index - 1][1]
         clause_end = len(instruction)
         if index + 1 < len(kernel_mentions):
             clause_end = kernel_mentions[index + 1][0]
@@ -195,14 +264,12 @@ def _extract_feature_groups(
         if not feature_indices:
             continue
 
+        clause_text = instruction[clause_start:clause_end]
         feature_groups.append(
             FeatureGroupSpec(
                 name="_".join(input_feature_names[index] for index in feature_indices),
                 feature_indices=feature_indices,
-                kernel=KernelSpec(
-                    kernel_type=kernel_type,
-                    ard=_resolve_ard_setting(instruction, kernel_type),
-                ),
+                kernel=_build_kernel_spec(clause_text, kernel_type, ard_instruction=instruction),
             )
         )
 
@@ -240,6 +307,7 @@ def translate_to_dsl(
     explicit_composition = _detect_explicit_composition(instruction)
     noise = _detect_noise(instruction)
     use_ard = _resolve_ard_setting(instruction, kernel_type)
+    default_kernel_spec = _build_kernel_spec(instruction, kernel_type)
     feature_groups = _extract_feature_groups(instruction, input_feature_names)
 
     if feature_groups:
@@ -255,7 +323,7 @@ def translate_to_dsl(
             FeatureGroupSpec(
                 name=f"output_{output_idx}_features",
                 feature_indices=continuous_indices,
-                kernel=KernelSpec(kernel_type=kernel_type, ard=use_ard),
+                kernel=default_kernel_spec.model_copy(deep=True),
             )
             for output_idx in range(output_dim)
         ]
@@ -266,7 +334,7 @@ def translate_to_dsl(
             FeatureGroupSpec(
                 name="all_features",
                 feature_indices=continuous_indices,
-                kernel=KernelSpec(kernel_type=kernel_type, ard=use_ard),
+                kernel=default_kernel_spec.model_copy(deep=True),
             )
         ]
 

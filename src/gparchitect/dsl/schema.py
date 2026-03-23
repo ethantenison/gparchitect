@@ -46,12 +46,21 @@ class KernelType(str, Enum):
     """Supported GPyTorch kernel types."""
 
     RBF = "RBF"
+    RQ = "RQ"
     MATERN_12 = "Matern12"
     MATERN_32 = "Matern32"
     MATERN_52 = "Matern52"
     LINEAR = "Linear"
     PERIODIC = "Periodic"
     POLYNOMIAL = "Polynomial"
+    SPECTRAL_MIXTURE = "SpectralMixture"
+
+
+class SpectralMixtureInitialization(str, Enum):
+    """Initialization modes for the Spectral Mixture kernel."""
+
+    FROM_DATA = "from_data"
+    FROM_EMPIRICAL_SPECTRUM = "from_empirical_spectrum"
 
 
 class CompositionType(str, Enum):
@@ -100,6 +109,9 @@ class KernelSpec(BaseModel):
         composition: How this kernel is combined with others in the same feature group.
         children: Sub-kernels for composed (additive/multiplicative) kernels.
         period_prior: Optional prior on the period (for Periodic kernel only).
+        rq_alpha: Optional fixed initialization value for the RQ alpha parameter.
+        num_mixtures: Number of components for the Spectral Mixture kernel.
+        spectral_init: Initialization strategy for the Spectral Mixture kernel.
     """
 
     kernel_type: KernelType
@@ -109,6 +121,9 @@ class KernelSpec(BaseModel):
     composition: CompositionType = CompositionType.NONE
     children: list[KernelSpec] = Field(default_factory=list)
     period_prior: PriorSpec | None = None
+    rq_alpha: float | None = None
+    num_mixtures: int | None = None
+    spectral_init: SpectralMixtureInitialization = SpectralMixtureInitialization.FROM_DATA
 
 
 class FeatureGroupSpec(BaseModel):
