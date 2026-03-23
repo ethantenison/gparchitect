@@ -207,4 +207,4 @@ outcome transforms during model construction.
 
 - See `docs/architecture_module_map.md` for architecture boundaries.
 - See `.github/copilot-instructions.md` for project-wide design rules.
-- See the `src/gparchitect/examples/` directory for example scripts.
+- See the `tests/e2e/` directory for CI-checked end-to-end usage examples.

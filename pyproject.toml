@@ -41,3 +41,6 @@ ignore = ["E501"]
 testpaths = ["tests"]
 python_files = ["test_*.py"]
 python_functions = ["test_*"]
+markers = [
+	"e2e: end-to-end user-facing pipeline examples",
+]
