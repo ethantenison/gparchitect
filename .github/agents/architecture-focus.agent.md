@@ -81,8 +81,9 @@ Assess the handoff in terms of:
 
 Prefer `#tool:execute` with the planning CLI when a terminal bridge is available.
 
-- Use `gparchitect plan architecture --text "..." --output-format json` for inline handoffs or structured summaries.
-- Use `gparchitect plan architecture --input-file path/to/handoff.txt --output-format json` for multiline handoffs.
+- Use `gparchitect-plan architecture path/to/handoff.txt` for multiline handoffs.
+- Use `gparchitect-plan architecture --stdin` when piping a handoff from another command.
+- Use `gparchitect-plan architecture --text "..."` only for short inline handoffs or summaries.
 - Treat the CLI result as the authoritative architecture-planning artifact.
 - If shell execution is unavailable, continue with the same architecture-handoff contract in markdown.
 

@@ -89,6 +89,8 @@ gparchitect plan prior \
 gparchitect plan auto \
     --text "BEGIN GPARCHITECT PRIOR KNOWLEDGE HANDOFF\nSystem Summary:\n- Battery degradation forecasting.\nEND GPARCHITECT PRIOR KNOWLEDGE HANDOFF" \
     --output-format json
+
+gparchitect-plan auto prompt.txt
 ```
 
 ## Planning API
@@ -112,6 +114,9 @@ print(planning_run.chosen_path)
 
 The planning subsystem is upstream of DSL construction. It produces structured
 handoffs only and does not build or fit models.
+
+For tool or agent bridges, prefer `gparchitect-plan <mode> prompt.txt` or
+`... --stdin` over long quoted inline prompts.
 
 ## Installation
 

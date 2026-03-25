@@ -130,8 +130,9 @@ If the domain is financial, time-series, scientific, or probabilistic, pay extra
 
 Prefer `#tool:execute` with the planning CLI when it is available.
 
-- Use `gparchitect plan prior --text "..." --output-format json` for inline prompts.
-- Use `gparchitect plan prior --input-file path/to/prompt.txt --output-format json` for multiline prompt files.
+- Use `gparchitect-plan prior path/to/prompt.txt` for multiline prompt files.
+- Use `gparchitect-plan prior --stdin` when piping prompt text from another command.
+- Use `gparchitect-plan prior --text "..."` only for short inline prompts.
 - Treat the CLI result as the structured source of truth for the prior-knowledge handoff.
 - If shell execution is not available, continue with the same handoff contract in this markdown workflow.
 

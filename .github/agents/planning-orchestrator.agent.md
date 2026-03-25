@@ -69,8 +69,9 @@ This is the default path when:
 
 Prefer `#tool:execute` with the executable planning runtime when shell access is available.
 
-- Use `gparchitect plan auto --text "..." --output-format json` for inline prompts.
-- Use `gparchitect plan auto --input-file path/to/prompt.txt --output-format json` when the input is multiline or needs quoting safety.
+- Use `gparchitect-plan auto path/to/prompt.txt` when the input is multiline or needs quoting safety.
+- Use `gparchitect-plan auto --stdin` when piping prompt text from another command.
+- Use `gparchitect-plan auto --text "..."` only for short inline prompts.
 - Treat the CLI JSON result as the authoritative structured artifact for route selection and handoff exchange.
 - If prompt-to-shell interpolation is not practical in the current environment, fall back to the delegated Prior Knowledge and Architecture Focus agents while preserving the same handoff formats.
 

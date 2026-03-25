@@ -147,6 +147,12 @@ gparchitect plan prior \
 gparchitect plan auto \
     --text "Temperature and pressure interact. Noise increases near the upper pressure limit. Please do downstream planning." \
     --output-format json
+
+# Agent-friendly planning bridge
+gparchitect-plan auto prompt.txt
+
+# Or pipe prompt text without shell-escaping a long argument
+cat prompt.txt | gparchitect-plan auto --stdin
 ```
 
 ## Planning Runtime
@@ -173,6 +179,9 @@ print(planning_result.model_dump_json(indent=2))
 
 These planning APIs stop at structured handoffs. They do not translate text into
 the GP DSL or build models directly.
+
+For automation or VS Code agent bridges, the `gparchitect-plan` wrapper is the
+preferred command surface because it works cleanly with files and stdin.
 
 ---
 

@@ -141,7 +141,7 @@ class TestPlanningOrchestratorAgent:
 
         assert "execute" in _get_string_list(frontmatter, "tools")
         assert "## Runtime Bridge" in body
-        assert "gparchitect plan auto" in body
+        assert "gparchitect-plan auto" in body
         assert "authoritative structured artifact" in body
 
 
