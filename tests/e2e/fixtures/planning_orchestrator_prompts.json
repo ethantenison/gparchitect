@@ -1,0 +1,29 @@
+[
+  {
+    "scenario": "raw prior knowledge with planning request uses both stages",
+    "prompt": "We are modeling a chemical process yield. Temperature and pressure interact, noise increases near upper pressure limits, and operators want end-to-end GPArchitect planning from these notes.",
+    "input_kind": "raw_prior_knowledge",
+    "planning_requested": true,
+    "contains_handoff": false,
+    "expected_path": "Prior Knowledge -> Architecture Focus",
+    "expected_agents": ["Prior Knowledge", "Architecture Focus"]
+  },
+  {
+    "scenario": "raw prior knowledge with elicitation-only request stops after prior knowledge",
+    "prompt": "I only want prior-knowledge elicitation for a demand forecasting system with weekly seasonality, delayed labels, and occasional regime shifts. Do not do architecture planning yet.",
+    "input_kind": "raw_prior_knowledge",
+    "planning_requested": false,
+    "contains_handoff": false,
+    "expected_path": "Prior Knowledge only",
+    "expected_agents": ["Prior Knowledge"]
+  },
+  {
+    "scenario": "structured handoff routes directly to architecture focus",
+    "prompt": "BEGIN GPARCHITECT PRIOR KNOWLEDGE HANDOFF\nSystem Summary:\n- Battery degradation forecasting with temperature and cycle count inputs.\nEND GPARCHITECT PRIOR KNOWLEDGE HANDOFF\nPlease convert this into GPArchitect planning.",
+    "input_kind": "structured_handoff",
+    "planning_requested": true,
+    "contains_handoff": true,
+    "expected_path": "Architecture Focus only",
+    "expected_agents": ["Architecture Focus"]
+  }
+]
