@@ -152,8 +152,10 @@ def parse_architecture_handoff_text(text: str) -> ArchitectureHandoff:
 
 def _extract_block(text: str, begin_marker: str, end_marker: str) -> str | None:
     begin_index = text.find(begin_marker)
-    end_index = text.find(end_marker)
-    if begin_index == -1 or end_index == -1 or end_index < begin_index:
+    if begin_index == -1:
+        return None
+    end_index = text.find(end_marker, begin_index)
+    if end_index == -1 or end_index < begin_index:
         return None
     end_index += len(end_marker)
     return text[begin_index:end_index].strip()
