@@ -351,7 +351,8 @@ def _select_route(
     has_handoff = extract_prior_knowledge_handoff_block(input_text) is not None
 
     if mode == "prior":
-        return "Prior Knowledge only", "Explicit prior-only mode requested.", "raw_input", False
+        source_kind = "prior_knowledge_handoff" if has_handoff else "raw_input"
+        return "Prior Knowledge only", "Explicit prior-only mode requested.", source_kind, False
 
     if mode == "architecture":
         source_kind: PlanningSourceKind = "prior_knowledge_handoff" if has_handoff else "structured_summary"
@@ -426,9 +427,20 @@ def _infer_inputs_and_outputs(sentences: list[str]) -> tuple[list[str], list[str
     labeled_outputs = _extract_labeled_items(joined, "outputs")
 
     if not labeled_inputs:
-        interaction_match = re.search(r"([A-Za-z][A-Za-z0-9_ ]+) and ([A-Za-z][A-Za-z0-9_ ]+) interact", joined, re.IGNORECASE)
-        if interaction_match:
-            labeled_inputs = [interaction_match.group(1).strip(), interaction_match.group(2).strip()]
+        for sentence in sentences:
+            if "interact" not in sentence.lower():
+                continue
+            interaction_match = re.search(
+                r"\b([A-Za-z][A-Za-z0-9_ ]+?)\s+and\s+([A-Za-z][A-Za-z0-9_ ]+?)\s+interact\b",
+                sentence,
+                re.IGNORECASE,
+            )
+            if interaction_match:
+                labeled_inputs = [
+                    interaction_match.group(1).strip(),
+                    interaction_match.group(2).strip(),
+                ]
+                break
 
     if not labeled_outputs:
         output_match = re.search(r"modeling ([A-Za-z][A-Za-z0-9_ ]+?)(?: with| where| and|\.|$)", joined, re.IGNORECASE)
