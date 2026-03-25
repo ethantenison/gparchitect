@@ -174,6 +174,5 @@ All revisions must be recorded.
 ## Non-Goals
 
 - No web application or UI
-- No general-purpose LLM agent framework
 - No categorical or binary input support in v1
 - Focus on continuous inputs and optional task variables
