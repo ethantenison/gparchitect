@@ -1,7 +1,7 @@
 ---
 name: "Architecture Focus"
 description: "Use when converting GPArchitect prior knowledge into architecture planning, DSL planning, feature grouping, kernel implications, model-class implications, validation risks, and implementation-ready handoff without directly constructing a model from prose."
-tools: [read, search]
+tools: [read, search, execute]
 argument-hint: "Provide a GPArchitect prior knowledge handoff block or a structured summary of assumptions and constraints."
 user-invocable: true
 disable-model-invocation: false
@@ -76,6 +76,15 @@ Assess the handoff in terms of:
 - Prefer planning that can map cleanly into the current GPArchitect DSL surface.
 - Explicitly mark any requirement that likely exceeds current DSL or validation support.
 - Do not silently absorb constraints into prose. Say whether they are representable.
+
+## Runtime Bridge
+
+Prefer `#tool:execute` with the planning CLI when a terminal bridge is available.
+
+- Use `gparchitect plan architecture --text "..." --output-format json` for inline handoffs or structured summaries.
+- Use `gparchitect plan architecture --input-file path/to/handoff.txt --output-format json` for multiline handoffs.
+- Treat the CLI result as the authoritative architecture-planning artifact.
+- If shell execution is unavailable, continue with the same architecture-handoff contract in markdown.
 
 ## Required Output
 
@@ -155,3 +164,4 @@ END GPARCHITECT ARCHITECTURE HANDOFF
 
 Prefer disciplined narrowing over premature specificity.
 Do not duplicate the Prior Knowledge role. Translate the handoff into architecture planning and stop there.
+When the runtime bridge is available, prefer the CLI output because it keeps planning deterministic and inspectable.

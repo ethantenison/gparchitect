@@ -9,7 +9,17 @@ Refer to `.github/copilot-instructions.md` for normative rules, and
 ## Pipeline Overview
 
 ```
-Natural language
+Natural language planning input
+  │
+  ▼
+┌─────────────────────┐
+│     Planning        │  src/gparchitect/planning/
+│ prior knowledge and │
+│ architecture intent │
+└─────────┬───────────┘
+      │ planning handoffs
+      ▼
+Natural language model instruction
       │
       ▼
 ┌─────────────────────┐
@@ -100,6 +110,27 @@ Kernel construction follows these builder-side rules:
 
 **Boundary rule**: This module has NO dependencies on other gparchitect modules.
 It must remain import-free from the rest of the codebase.
+
+---
+
+### `src/gparchitect/planning/`
+
+**Responsibility**: Produce structured planning artifacts that capture prior knowledge,
+architecture implications, and orchestration routing before GP DSL construction.
+
+**Key types**:
+- `PriorKnowledgeHandoff` — structured prior-knowledge artifact
+- `ArchitectureHandoff` — structured architecture-planning artifact
+- `PlanningRunResult` — route selection and stage outputs
+
+**Key functions**:
+- `run_prior_knowledge(input_text) -> PriorKnowledgeHandoff`
+- `run_architecture_focus(handoff) -> ArchitectureHandoff`
+- `run_architect(input_text, mode) -> PlanningRunResult`
+
+**Boundary rule**: Planning must NOT import from `translator`, `validation`, `builders`,
+`fitting`, `revision`, or `logging`. It sits upstream of DSL construction and must stop
+at planning artifacts rather than producing a model or GP DSL directly.
 
 ---
 
@@ -200,23 +231,26 @@ This is the only module permitted to import from ALL other subpackages.
 
 ### `src/gparchitect/cli.py`
 
-**Responsibility**: Command-line interface wrapping `api.run_gparchitect`.
+**Responsibility**: Command-line interface wrapping `api.run_gparchitect` and the
+executable planning runtime.
 
-This module imports from `api` only and handles CSV I/O and terminal output.
+This module imports from `api` for model construction and `planning` for pre-DSL
+planning commands. It handles CSV I/O, planning text input, and terminal output.
 
 ---
 
 ## Dependency Matrix
 
-| Module       | dsl | translator | validation | builders | fitting | revision | logging |
-|:------------ |:---:|:----------:|:----------:|:--------:|:-------:|:--------:|:-------:|
-| translator   | ✓   |            |            |          |         |          |         |
-| validation   | ✓   |            |            |          |         |          |         |
-| builders     | ✓   |            |            |          |         |          |         |
-| fitting      |     |            |            |          |         |          |         |
-| revision     | ✓   |            |            |          |         |          |         |
-| logging      | ✓   |            |            |          |         |          |         |
-| api          | ✓   | ✓          | ✓          | ✓        | ✓       | ✓        | ✓       |
-| cli          |     |            | ✓          | ✓        |         |          |         |
+| Module       | dsl | planning | translator | validation | builders | fitting | revision | logging |
+|:------------ |:---:|:--------:|:----------:|:----------:|:--------:|:-------:|:--------:|:-------:|
+| planning     |     |          |            |            |          |         |          |         |
+| translator   | ✓   |          |            |            |          |         |          |         |
+| validation   | ✓   |          |            |            |          |         |          |         |
+| builders     | ✓   |          |            |            |          |         |          |         |
+| fitting      |     |          |            |            |          |         |          |         |
+| revision     | ✓   |          |            |            |          |         |          |         |
+| logging      | ✓   |          |            |            |          |         |          |         |
+| api          | ✓   |          | ✓          | ✓          | ✓        | ✓       | ✓        | ✓       |
+| cli          |     | ✓        | ✓          | ✓          | ✓        |         |          |         |
 
 `api` is the **only** module that may import from all others.

@@ -33,16 +33,30 @@ from gparchitect.api import (
     translate_to_dsl,
     validate_dsl,
 )
+from gparchitect.planning import (
+    ArchitectureHandoff,
+    PlanningRunResult,
+    PriorKnowledgeHandoff,
+    run_architect,
+    run_architecture_focus,
+    run_prior_knowledge,
+)
 
 __version__ = "0.1.0"
 
 __all__ = [
     "__version__",
+    "ArchitectureHandoff",
+    "PlanningRunResult",
+    "PriorKnowledgeHandoff",
     "build_model_from_dsl",
     "fit_and_validate",
     "prepare_data",
     "revise_dsl",
+    "run_architect",
+    "run_architecture_focus",
     "run_gparchitect",
+    "run_prior_knowledge",
     "summarize_attempts",
     "translate_to_dsl",
     "validate_dsl",

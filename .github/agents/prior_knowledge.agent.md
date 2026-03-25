@@ -1,7 +1,7 @@
 ---
 name: "Prior Knowledge"
 description: "Use when eliciting prior knowledge, domain knowledge, system behavior, constraints, assumptions, uncertainty, data process risks, and decision context before GPArchitect architecture planning, DSL design, kernel selection, or model selection."
-tools: [read, search, agent]
+tools: [read, search, agent, execute]
 agents: [Architecture Focus]
 argument-hint: "Describe the system, what is already known, what is uncertain, the data process, and any hard constraints."
 user-invocable: true
@@ -126,6 +126,15 @@ If a user states monotonicity, conservation, strict feasibility, or similar requ
 
 If the domain is financial, time-series, scientific, or probabilistic, pay extra attention to nonstationarity, regime changes, multiscale behavior, heteroskedasticity, delayed information, and look-ahead bias.
 
+## Runtime Bridge
+
+Prefer `#tool:execute` with the planning CLI when it is available.
+
+- Use `gparchitect plan prior --text "..." --output-format json` for inline prompts.
+- Use `gparchitect plan prior --input-file path/to/prompt.txt --output-format json` for multiline prompt files.
+- Treat the CLI result as the structured source of truth for the prior-knowledge handoff.
+- If shell execution is not available, continue with the same handoff contract in this markdown workflow.
+
 ## Required Output
 
 When enough information is available, produce these sections:
@@ -224,3 +233,4 @@ Your default end product is not a model recommendation.
 Your default end product is a structured handoff artifact for the Architecture Focus agent.
 
 If the user explicitly asks to continue, pass the prior-knowledge handoff block to the Architecture Focus agent and stop doing broad elicitation.
+When the runtime bridge is available, prefer the CLI output over ad hoc prose because it is deterministic and machine-readable.

@@ -1,7 +1,7 @@
 ---
 name: "Planning Orchestrator"
 description: "Use for end-to-end GPArchitect planning orchestration when the agent should reason about whether to elicit prior knowledge first or route directly to Architecture Focus, and optionally run both stages automatically."
-tools: [read, agent]
+tools: [read, agent, execute]
 agents: [Prior Knowledge, Architecture Focus]
 argument-hint: "Provide either raw system/domain prior knowledge or a GPARCHITECT PRIOR KNOWLEDGE HANDOFF block and say whether you want full planning orchestration."
 user-invocable: true
@@ -65,6 +65,15 @@ This is the default path when:
 - If the user already provides a valid prior-knowledge handoff, skip Prior Knowledge and invoke Architecture Focus directly.
 - If essential information is missing and neither specialist can proceed responsibly, ask the user only the smallest set of blocking questions.
 
+## Runtime Bridge
+
+Prefer `#tool:execute` with the executable planning runtime when shell access is available.
+
+- Use `gparchitect plan auto --text "..." --output-format json` for inline prompts.
+- Use `gparchitect plan auto --input-file path/to/prompt.txt --output-format json` when the input is multiline or needs quoting safety.
+- Treat the CLI JSON result as the authoritative structured artifact for route selection and handoff exchange.
+- If prompt-to-shell interpolation is not practical in the current environment, fall back to the delegated Prior Knowledge and Architecture Focus agents while preserving the same handoff formats.
+
 ## What You Must Not Do
 
 - Do not rewrite specialist outputs into a different factual interpretation.
@@ -102,3 +111,4 @@ List only unresolved items that materially block the next planning step.
 
 Use LLM reasoning to decide the path, then delegate to the specialist agents.
 Prefer the minimum path that preserves quality, but default to the full two-stage flow when the user gives raw prior knowledge and wants downstream planning.
+When the runtime bridge is available, prefer the CLI path because it is the executable source of truth for planning output.

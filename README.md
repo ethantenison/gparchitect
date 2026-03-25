@@ -81,7 +81,37 @@ gparchitect --csv data.csv \
     --instruction "Use Matern52" \
     --inputs x1,x2,x3 \
     --outputs y
+
+gparchitect plan prior \
+    --text "Temperature and pressure interact, and noise increases near the upper pressure limit." \
+    --output-format text
+
+gparchitect plan auto \
+    --text "BEGIN GPARCHITECT PRIOR KNOWLEDGE HANDOFF\nSystem Summary:\n- Battery degradation forecasting.\nEND GPARCHITECT PRIOR KNOWLEDGE HANDOFF" \
+    --output-format json
 ```
+
+## Planning API
+
+```python
+from gparchitect import run_architect, run_architecture_focus, run_prior_knowledge
+
+prior = run_prior_knowledge(
+    "Temperature and pressure interact, and noise increases near the upper pressure limit."
+)
+architecture = run_architecture_focus(prior)
+planning_run = run_architect(
+    "Weekly seasonality and delayed labels matter, and I want downstream planning.",
+    mode="auto",
+)
+
+print(prior.to_handoff_text())
+print(architecture.to_handoff_text())
+print(planning_run.chosen_path)
+```
+
+The planning subsystem is upstream of DSL construction. It produces structured
+handoffs only and does not build or fit models.
 
 ## Installation
 

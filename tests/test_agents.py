@@ -12,7 +12,6 @@ from pathlib import Path
 
 import pytest
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 AGENTS_DIR = REPO_ROOT / ".github" / "agents"
 REQUIRED_FRONTMATTER_KEYS = {
@@ -95,7 +94,7 @@ class TestPlanningOrchestratorAgent:
         frontmatter, _ = _read_agent("planning-orchestrator.agent.md")
 
         assert _get_string(frontmatter, "name") == "Planning Orchestrator"
-        assert _get_string_list(frontmatter, "tools") == ["read", "agent"]
+        assert _get_string_list(frontmatter, "tools") == ["read", "agent", "execute"]
         assert _get_string_list(frontmatter, "agents") == ["Prior Knowledge", "Architecture Focus"]
         assert frontmatter["user-invocable"] is True
 
@@ -136,6 +135,14 @@ class TestPlanningOrchestratorAgent:
         assert "When both stages run, include:" in orchestrator_body
         assert "- the GPArchitect prior-knowledge handoff" in orchestrator_body
         assert "- the GPArchitect architecture handoff" in orchestrator_body
+
+    def test_orchestrator_documents_cli_runtime_bridge(self) -> None:
+        frontmatter, body = _read_agent("planning-orchestrator.agent.md")
+
+        assert "execute" in _get_string_list(frontmatter, "tools")
+        assert "## Runtime Bridge" in body
+        assert "gparchitect plan auto" in body
+        assert "authoritative structured artifact" in body
 
 
 class TestAgentFrontmatterSchema:
