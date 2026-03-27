@@ -46,6 +46,8 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelSpec,
     KernelType,
+    MeanFunctionType,
+    MeanSpec,
     ModelClass,
     SpectralMixtureInitialization,
 )
@@ -341,6 +343,57 @@ def _prepare_inputs(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.Tenso
     return full_X, train_Y, feature_index_map
 
 
+def _build_mean_module_from_spec(mean_spec: MeanSpec, input_size: int):  # noqa: ANN201
+    """Build a GPyTorch mean module from a mean specification."""
+    import gpytorch
+
+    if mean_spec.mean_type == MeanFunctionType.CONSTANT:
+        return gpytorch.means.ConstantMean()
+    if mean_spec.mean_type == MeanFunctionType.ZERO:
+        return gpytorch.means.ZeroMean()
+    return gpytorch.means.LinearMean(input_size=input_size)
+
+
+def _build_mean_module(
+    spec: GPSpec,
+    input_size: int,
+    *,
+    output_index: int | None = None,
+):  # noqa: ANN201
+    """Build a mean module for single-task or per-output independent models."""
+    mean_spec = spec.output_means.get(output_index) if output_index is not None else None
+    if mean_spec is None:
+        mean_spec = spec.mean
+    if mean_spec is None:
+        return None
+    return _build_mean_module_from_spec(mean_spec, input_size)
+
+
+def _build_multitask_mean_module(
+    spec: GPSpec,
+    task_values: list[int],
+    num_non_task_features: int,
+    combined_input_size: int,
+):  # noqa: ANN201
+    """Build a mean module for MultiTaskGP, including optional per-task overrides."""
+    import gpytorch
+
+    if not spec.output_means and spec.mean is None:
+        return None
+
+    if not spec.output_means:
+        return _build_mean_module_from_spec(spec.mean, combined_input_size) if spec.mean is not None else None
+
+    base_means = []
+    for task_value in task_values:
+        task_mean_spec = spec.output_means.get(task_value)
+        if task_mean_spec is None:
+            task_mean_spec = spec.mean or MeanSpec(mean_type=MeanFunctionType.CONSTANT)
+        base_means.append(_build_mean_module_from_spec(task_mean_spec, num_non_task_features))
+
+    return gpytorch.means.MultitaskMean(base_means=base_means, num_tasks=len(task_values))
+
+
 def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.Tensor"):  # noqa: ANN201
     """Construct a BoTorch GP model from a validated GPSpec.
 
@@ -366,12 +419,14 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
 
     if spec.model_class == ModelClass.SINGLE_TASK_GP:
         covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
-        likelihood = _build_likelihood(spec)
+        mean_module = _build_mean_module(spec, input_size=full_X.shape[-1])
+        likelihood = _build_likelihood(spec, train_Y=full_Y)
         model = botorch.models.SingleTaskGP(
             train_X=full_X,
             train_Y=full_Y,
             covar_module=covar_module,
             likelihood=likelihood,
+            mean_module=mean_module,
             outcome_transform=Standardize(m=full_Y.shape[-1]),
         )
 
@@ -379,17 +434,22 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
         if spec.task_feature_index is None:
             raise ValueError("MultiTaskGP requires task_feature_index.")
         rank = spec.multitask_rank if spec.multitask_rank is not None else 1
-        # Append task column back for MultiTaskGP
-        task_col = train_X[:, spec.task_feature_index].long().unsqueeze(-1)
-        continuous_indices = sorted(
-            {idx for group in spec.feature_groups for idx in group.feature_indices}
+        task_values = sorted({int(value) for value in train_X[:, spec.task_feature_index].long().tolist()})
+        covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
+        mean_module = _build_multitask_mean_module(
+            spec,
+            task_values=task_values,
+            num_non_task_features=len(feature_index_map),
+            combined_input_size=full_X.shape[-1],
         )
-        continuous_X = train_X[:, continuous_indices]
-        combined_X = torch.cat([continuous_X, task_col.float()], dim=-1)
+        likelihood = _build_likelihood(spec, train_Y=full_Y)
         model = botorch.models.MultiTaskGP(
-            train_X=combined_X,
+            train_X=full_X,
             train_Y=full_Y,
             task_feature=-1,
+            mean_module=mean_module,
+            covar_module=covar_module,
+            likelihood=likelihood,
             rank=rank,
         )
 
@@ -398,12 +458,14 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
         for output_idx in range(spec.output_dim):
             output_train_Y = full_Y[:, output_idx : output_idx + 1]
             covar_module = _build_covariance_module(spec, feature_index_map, full_X, output_train_Y)
-            likelihood = _build_likelihood(spec)
+            mean_module = _build_mean_module(spec, input_size=full_X.shape[-1], output_index=output_idx)
+            likelihood = _build_likelihood(spec, train_Y=output_train_Y)
             single_model = botorch.models.SingleTaskGP(
                 train_X=full_X,
                 train_Y=output_train_Y,
                 covar_module=covar_module,
                 likelihood=likelihood,
+                mean_module=mean_module,
                 outcome_transform=Standardize(m=1),
             )
             individual_models.append(single_model)
@@ -416,7 +478,7 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
     return model
 
 
-def _build_likelihood(spec: GPSpec):  # noqa: ANN201
+def _build_likelihood(spec: GPSpec, *, train_Y):  # noqa: ANN201, ANN001
     """Build a GPyTorch likelihood from the noise specification.
 
     Args:
@@ -430,9 +492,10 @@ def _build_likelihood(spec: GPSpec):  # noqa: ANN201
 
     if spec.noise.fixed and spec.noise.noise_value is not None:
         noise_val = spec.noise.noise_value
-        likelihood = gpytorch.likelihoods.GaussianLikelihood()
-        likelihood.noise = torch.tensor(noise_val, dtype=torch.double)
-        likelihood.noise_covar.raw_noise.requires_grad_(False)
-        return likelihood
+        if train_Y.ndim == 2 and train_Y.shape[-1] == 1:
+            fixed_noise = torch.full(train_Y.shape[:-1], noise_val, dtype=train_Y.dtype, device=train_Y.device)
+        else:
+            fixed_noise = torch.full_like(train_Y, noise_val)
+        return gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=fixed_noise)
 
     return gpytorch.likelihoods.GaussianLikelihood()

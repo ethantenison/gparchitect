@@ -88,6 +88,7 @@ def validate_dsl(spec: GPSpec) -> ValidationResult:
     _check_dimensions(spec, result)
     _check_feature_groups(spec, result)
     _check_model_class_consistency(spec, result)
+    _check_mean_spec(spec, result)
     _check_noise(spec, result)
     _check_priors(spec, result)
 
@@ -251,6 +252,23 @@ def _check_model_class_consistency(spec: GPSpec, result: ValidationResult) -> No
                 "task_feature_index is set but model_class is SingleTaskGP; "
                 "the task column will be ignored."
             )
+
+
+def _check_mean_spec(spec: GPSpec, result: ValidationResult) -> None:
+    if spec.model_class == ModelClass.SINGLE_TASK_GP and spec.output_means:
+        result.errors.append("SingleTaskGP does not support output_means; use mean for a shared mean function.")
+
+    if spec.model_class == ModelClass.MODEL_LIST_GP:
+        for output_index in spec.output_means:
+            if output_index < 0 or output_index >= spec.output_dim:
+                result.errors.append(
+                    f"ModelListGP output_means index {output_index} is out of range for output_dim={spec.output_dim}."
+                )
+
+    if spec.model_class == ModelClass.MULTI_TASK_GP:
+        for task_index in spec.output_means:
+            if task_index < 0:
+                result.errors.append(f"MultiTaskGP output_means task index must be >= 0, got {task_index}.")
 
 
 def _check_noise(spec: GPSpec, result: ValidationResult) -> None:

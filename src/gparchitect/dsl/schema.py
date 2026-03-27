@@ -12,7 +12,8 @@ Inputs:
     None — this module defines data structures only.
 
 Outputs:
-    Pydantic model classes: GPSpec, KernelSpec, FeatureGroupSpec, PriorSpec, NoiseSpec.
+    Pydantic model classes: GPSpec, KernelSpec, FeatureGroupSpec, PriorSpec, NoiseSpec,
+    MeanSpec.
 
 Non-obvious design decisions:
     - All fields use native Python typing (list, dict, X | None) per project style.
@@ -74,6 +75,14 @@ class CompositionType(str, Enum):
     NONE = "none"
 
 
+class MeanFunctionType(str, Enum):
+    """Supported GPyTorch mean function types."""
+
+    CONSTANT = "Constant"
+    ZERO = "Zero"
+    LINEAR = "Linear"
+
+
 class PriorSpec(BaseModel):
     """Specification for a GP hyperparameter prior.
 
@@ -98,6 +107,16 @@ class NoiseSpec(BaseModel):
     fixed: bool = False
     noise_value: float | None = None
     prior: PriorSpec | None = None
+
+
+class MeanSpec(BaseModel):
+    """Specification for a GP mean function.
+
+    Attributes:
+        mean_type: The mean function family to use.
+    """
+
+    mean_type: MeanFunctionType
 
 
 class KernelSpec(BaseModel):
@@ -163,6 +182,8 @@ class GPSpec(BaseModel):
     Attributes:
         model_class: The BoTorch model class to instantiate.
         feature_groups: One or more feature groups, each with their own kernel.
+        mean: Optional shared mean-function specification.
+        output_means: Optional per-output or per-task mean overrides.
         noise: Noise model specification.
         input_dim: Total number of input features.
         output_dim: Number of output dimensions (1 for single-task).
@@ -174,6 +195,8 @@ class GPSpec(BaseModel):
 
     model_class: ModelClass = ModelClass.SINGLE_TASK_GP
     feature_groups: list[FeatureGroupSpec] = Field(default_factory=list)
+    mean: MeanSpec | None = None
+    output_means: dict[int, MeanSpec] = Field(default_factory=dict)
     noise: NoiseSpec = Field(default_factory=NoiseSpec)
     input_dim: int = 1
     output_dim: int = 1

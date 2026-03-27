@@ -10,6 +10,8 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelSpec,
     KernelType,
+    MeanFunctionType,
+    MeanSpec,
     ModelClass,
     NoiseSpec,
     PriorSpec,
@@ -203,6 +205,42 @@ class TestValidateNoise:
         spec.noise.noise_value = 1e-4
         result = validate_dsl(spec)
         assert result.is_valid
+
+
+class TestValidateMeans:
+    def test_single_task_rejects_output_means(self) -> None:
+        spec = _make_simple_spec()
+        spec.output_means = {0: MeanSpec(mean_type=MeanFunctionType.ZERO)}
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("output_means" in error for error in result.errors)
+
+    def test_model_list_rejects_out_of_range_output_mean_index(self) -> None:
+        spec = _make_simple_spec(output_dim=2)
+        spec.model_class = ModelClass.MODEL_LIST_GP
+        spec.output_means = {2: MeanSpec(mean_type=MeanFunctionType.LINEAR)}
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("out of range" in error for error in result.errors)
+
+    def test_multitask_rejects_negative_task_mean_index(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="features",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+            output_means={-1: MeanSpec(mean_type=MeanFunctionType.CONSTANT)},
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("task index" in error for error in result.errors)
 
 
 class TestValidatePriors:

@@ -65,6 +65,15 @@ directive, the default composition is hierarchical: main effects plus interactio
 If you do not specify feature groups, GPArchitect uses a single kernel across all
 continuous inputs and enables ARD by default for kernels that support it.
 
+Mean functions can also be requested directly from natural language:
+
+- `constant mean`
+- `zero mean`
+- `linear mean`
+
+If the instruction does not mention a mean function, GPArchitect leaves the mean unset in the
+DSL so the underlying BoTorch model uses its default mean behavior.
+
 ### 3. Inspect the generated DSL
 
 ```python
@@ -111,12 +120,17 @@ df = pd.DataFrame({
 
 model, log = run_gparchitect(
     dataframe=df,
-    instruction="Use a multi-task GP with Matern52 kernel",
+    instruction="Use a multi-task GP with Matern52 kernel and zero mean for task 0",
     input_columns=["x1", "x2"],
     output_columns=["y"],
     task_column="task",
 )
 ```
+
+```
+
+For ModelListGP, you can target means per output with phrases such as `output 1 uses zero mean`
+and `output 2 uses linear mean`.
 
 ---
 
@@ -192,8 +206,9 @@ GPArchitect automatically retries with a simplified DSL if fitting fails:
 1. Disables ARD when it is currently enabled
 2. Simplifies kernels to Matern52
 3. Removes priors
-4. Switches to SingleTaskGP
-5. Uses default noise
+4. Removes explicit mean settings and falls back to model defaults when mean handling fails
+5. Switches to SingleTaskGP
+6. Uses default noise
 
 All revisions are recorded in the `ExperimentLog`:
 
@@ -244,6 +259,8 @@ kernels, and `power 2.5` plus `offset 0.2` configure Exponential Decay kernels.
 
 Outputs for `SingleTaskGP` and `ModelListGP` are standardized through BoTorch
 outcome transforms during model construction.
+When no mean function is requested, the builder preserves the default mean used by the selected
+BoTorch model class.
 
 ---
 

@@ -105,6 +105,7 @@ Kernel construction follows these builder-side rules:
 - `GPSpec` — root DSL object
 - `FeatureGroupSpec` — a group of input features with a shared kernel
 - `KernelSpec` — a kernel or composition of kernels
+- `MeanSpec` — a shared or per-output mean-function specification
 - `NoiseSpec` — noise model specification
 - `PriorSpec` — hyperparameter prior specification
 
@@ -169,6 +170,13 @@ at planning artifacts rather than producing a model or GP DSL directly.
 **Key functions**:
 - `build_model_from_dsl(spec, train_X, train_Y) → BoTorch model`
 - `prepare_data(dataframe, input_columns, output_columns, task_column) → DataBundle`
+
+Builder responsibilities include:
+
+- Converting `MeanSpec` into GPyTorch mean modules
+- Applying optional per-output means for `ModelListGP`
+- Applying optional per-task means for `MultiTaskGP`
+- Selecting the likelihood implementation from the DSL noise spec and model class
 
 **Boundary rule**: Builders import `dsl` and `torch`/`botorch`/`gpytorch`.
 They must NOT import from `translator`, `fitting`, `revision`, or `logging`.

@@ -23,6 +23,8 @@ Non-obvious design decisions:
     - Revisions operate on the DSL only, never on the original natural-language string.
     - Each strategy is tried in order of decreasing model complexity, ensuring the
       system always moves toward a simpler, more robust configuration.
+        - Mean-related build and fit failures are handled with an error-aware simplification
+            step that removes explicit mean directives and falls back to model defaults.
     - All revisions are recorded with a rationale string for logging purposes.
     - Strategies are exhausted in a fixed order to keep recovery deterministic.
 
@@ -61,6 +63,16 @@ _STRATEGIES = [
     "use_default_noise",
 ]
 
+_MEAN_ERROR_TOKENS = (
+    "mean",
+    "mean_module",
+    "constantmean",
+    "zeromean",
+    "linearmean",
+    "multitaskmean",
+    "base_means",
+)
+
 
 @dataclass
 class RevisionResult:
@@ -91,20 +103,24 @@ def revise_dsl(spec: GPSpec, error_message: str, attempt: int) -> RevisionResult
     Returns:
         RevisionResult with the revised spec and rationale, or None if exhausted.
     """
-    if attempt >= len(_STRATEGIES):
-        logger.warning("All revision strategies exhausted after %d attempts.", attempt)
-        return None
-
-    strategy = _STRATEGIES[attempt]
     revised = copy.deepcopy(spec)
 
-    strategy_fn = {
-        "disable_ard": _disable_ard,
-        "simplify_kernels_to_matern52": _simplify_kernels,
-        "remove_priors": _remove_priors,
-        "switch_to_single_task_gp": _switch_to_single_task,
-        "use_default_noise": _use_default_noise,
-    }[strategy]
+    if _should_simplify_mean(revised, error_message):
+        strategy = "simplify_mean_to_default"
+        strategy_fn = _simplify_mean_configuration
+    else:
+        if attempt >= len(_STRATEGIES):
+            logger.warning("All revision strategies exhausted after %d attempts.", attempt)
+            return None
+
+        strategy = _STRATEGIES[attempt]
+        strategy_fn = {
+            "disable_ard": _disable_ard,
+            "simplify_kernels_to_matern52": _simplify_kernels,
+            "remove_priors": _remove_priors,
+            "switch_to_single_task_gp": _switch_to_single_task,
+            "use_default_noise": _use_default_noise,
+        }[strategy]
 
     rationale = strategy_fn(revised, error_message)
 
@@ -116,6 +132,37 @@ def revise_dsl(spec: GPSpec, error_message: str, attempt: int) -> RevisionResult
 # ---------------------------------------------------------------------------
 # Individual recovery strategies
 # ---------------------------------------------------------------------------
+
+
+def _should_simplify_mean(spec: GPSpec, error_message: str) -> bool:
+    """Return whether the failure suggests falling back to the model default mean."""
+    if spec.mean is None and not spec.output_means:
+        return False
+
+    normalized_error = error_message.lower()
+    return any(token in normalized_error for token in _MEAN_ERROR_TOKENS)
+
+
+def _simplify_mean_configuration(spec: GPSpec, error_message: str) -> str:
+    """Remove explicit mean configuration and fall back to model defaults."""
+    had_shared_mean = spec.mean is not None
+    had_targeted_means = bool(spec.output_means)
+
+    spec.mean = None
+    spec.output_means = {}
+
+    changes: list[str] = []
+    if had_shared_mean:
+        changes.append("removed the shared mean")
+    if had_targeted_means:
+        changes.append("removed targeted output/task means")
+    if not changes:
+        changes.append("left mean configuration unchanged")
+
+    return (
+        f"Simplified mean configuration: {' and '.join(changes)} so the model falls back to "
+        f"its default mean behavior. Error was: {error_message[:120]}"
+    )
 
 
 def _disable_ard(spec: GPSpec, error_message: str) -> str:

@@ -10,6 +10,8 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelSpec,
     KernelType,
+    MeanFunctionType,
+    MeanSpec,
     ModelClass,
     NoiseSpec,
     PriorSpec,
@@ -63,6 +65,38 @@ class TestReviseDisableARD:
         result = revise_dsl(spec, "singular matrix", attempt=0)
         assert result is not None
         assert "singular" in result.rationale
+
+
+class TestReviseMeanConfiguration:
+    def test_mean_error_prefers_mean_simplification(self) -> None:
+        spec = _make_spec()
+        spec.mean = MeanSpec(mean_type=MeanFunctionType.LINEAR)
+        spec.output_means = {0: MeanSpec(mean_type=MeanFunctionType.ZERO)}
+
+        result = revise_dsl(spec, "RuntimeError: mean_module shape mismatch", attempt=0)
+
+        assert result is not None
+        assert result.strategy == "simplify_mean_to_default"
+        assert result.revised_spec.mean is None
+        assert result.revised_spec.output_means == {}
+
+    def test_non_mean_error_keeps_standard_strategy_order(self) -> None:
+        spec = _make_spec()
+        spec.mean = MeanSpec(mean_type=MeanFunctionType.LINEAR)
+
+        result = revise_dsl(spec, "RuntimeError: cholesky failed", attempt=0)
+
+        assert result is not None
+        assert result.strategy == "disable_ard"
+        assert result.revised_spec.mean is not None
+
+    def test_mean_error_without_mean_config_uses_standard_strategy(self) -> None:
+        spec = _make_spec()
+
+        result = revise_dsl(spec, "RuntimeError: mean_module shape mismatch", attempt=0)
+
+        assert result is not None
+        assert result.strategy == "disable_ard"
 
 
 class TestReviseSimplifyKernels:

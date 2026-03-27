@@ -15,6 +15,8 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelSpec,
     KernelType,
+    MeanFunctionType,
+    MeanSpec,
     ModelClass,
     NoiseSpec,
 )
@@ -476,6 +478,85 @@ class TestBuildModelMocked:
 
         with pytest.raises((ValueError, AttributeError, Exception)):
             build_model_from_dsl(spec, train_X, train_Y)
+
+    def test_single_task_gp_uses_requested_mean_and_fixed_noise_likelihood(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import gpytorch
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_continuous_spec(input_dim=2)
+        spec.mean = MeanSpec(mean_type=MeanFunctionType.ZERO)
+        spec.noise = NoiseSpec(fixed=True, noise_value=1e-4)
+
+        train_X = torch.zeros(5, 2, dtype=torch.double)
+        train_Y = torch.zeros(5, 1, dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model.mean_module, gpytorch.means.ZeroMean)
+        assert isinstance(model.likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood)
+
+    def test_model_list_gp_supports_per_output_means(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import gpytorch
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_continuous_spec(input_dim=2)
+        spec.model_class = ModelClass.MODEL_LIST_GP
+        spec.output_dim = 2
+        spec.output_means = {
+            0: MeanSpec(mean_type=MeanFunctionType.ZERO),
+            1: MeanSpec(mean_type=MeanFunctionType.LINEAR),
+        }
+
+        train_X = torch.zeros(5, 2, dtype=torch.double)
+        train_Y = torch.zeros(5, 2, dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model.models[0].mean_module, gpytorch.means.ZeroMean)
+        assert isinstance(model.models[1].mean_module, gpytorch.means.LinearMean)
+
+    def test_multitask_gp_receives_custom_covar_mean_and_likelihood(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import gpytorch
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="continuous",
+                    feature_indices=[0, 1],
+                    kernel=KernelSpec(kernel_type=KernelType.RBF),
+                )
+            ],
+            noise=NoiseSpec(fixed=True, noise_value=1e-4),
+            input_dim=3,
+            output_dim=1,
+            task_feature_index=2,
+            multitask_rank=1,
+            output_means={0: MeanSpec(mean_type=MeanFunctionType.ZERO), 1: MeanSpec(mean_type=MeanFunctionType.CONSTANT)},
+        )
+
+        train_X = torch.tensor(
+            [[0.0, 0.1, 0.0], [1.0, 0.2, 0.0], [0.0, 0.1, 1.0], [1.0, 0.2, 1.0]],
+            dtype=torch.double,
+        )
+        train_Y = torch.tensor([[0.0], [1.0], [0.5], [1.5]], dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model.mean_module, gpytorch.means.MultitaskMean)
+        assert isinstance(model.mean_module.base_means[0], gpytorch.means.ZeroMean)
+        assert isinstance(model.mean_module.base_means[1], gpytorch.means.ConstantMean)
+        assert isinstance(model.likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood)
+        assert isinstance(model.covar_module, gpytorch.kernels.ScaleKernel)
+        assert isinstance(model.covar_module.base_kernel, gpytorch.kernels.RBFKernel)
+        assert isinstance(model.task_covar_module, gpytorch.kernels.IndexKernel)
 
 
 class TestDataPrepare:

@@ -15,6 +15,9 @@ initialization when requested in the instruction.
 Polynomial kernels can also take a degree and offset, periodic kernels can take a period
 length, infinite-width BNN kernels can take a depth, and exponential-decay kernels can take
 power and offset values.
+Mean functions can be selected with natural-language phrases such as `constant mean`,
+`zero mean`, or `linear mean`. If no mean function is specified, GPArchitect defers to
+the default mean used by the underlying BoTorch model.
 
 ## Architecture
 
@@ -73,6 +76,10 @@ polynomial kernels accept `degree 3` and `offset 1.5`, infinite-width BNN kernel
 `depth 5`, spectral mixture kernels accept an optional number of mixtures plus initialization
 hints such as `initialized from data` or `initialized from the empirical spectrum`, and
 exponential-decay kernels accept `power 2.5` and `offset 0.2`.
+Mean functions accept `constant mean`, `zero mean`, or `linear mean`. For independent-output
+ModelListGP specifications you can target individual outputs with phrases such as `output 1 uses
+zero mean` and `output 2 uses linear mean`. For MultiTaskGP you can target individual task values
+with phrases such as `zero mean for task 0` and `constant mean for task 1`.
 
 ## CLI
 
