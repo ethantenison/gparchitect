@@ -83,15 +83,23 @@ class MeanFunctionType(str, Enum):
     LINEAR = "Linear"
 
 
+class PriorDistribution(str, Enum):
+    """Supported GP prior distributions in the DSL contract."""
+
+    NORMAL = "Normal"
+    LOG_NORMAL = "LogNormal"
+    GAMMA = "Gamma"
+
+
 class PriorSpec(BaseModel):
     """Specification for a GP hyperparameter prior.
 
     Attributes:
-        distribution: Name of the prior distribution (e.g. "Normal", "LogNormal", "Gamma").
+        distribution: Name of the prior distribution.
         params: Distribution parameters as a name→value mapping.
     """
 
-    distribution: str
+    distribution: PriorDistribution
     params: dict[str, float] = Field(default_factory=dict)
 
 

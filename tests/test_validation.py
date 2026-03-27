@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from gparchitect.dsl.schema import (
     CompositionType,
@@ -312,10 +313,8 @@ class TestValidateMeans:
 
 class TestValidatePriors:
     def test_prior_without_distribution_fails(self) -> None:
-        spec = _make_simple_spec()
-        spec.feature_groups[0].kernel.lengthscale_prior = PriorSpec(distribution="")
-        result = validate_dsl(spec)
-        assert not result.is_valid
+        with pytest.raises(ValidationError):
+            PriorSpec(distribution="")
 
     def test_valid_prior_passes(self) -> None:
         spec = _make_simple_spec()
@@ -326,13 +325,8 @@ class TestValidatePriors:
         assert result.is_valid
 
     def test_unsupported_prior_distribution_fails(self) -> None:
-        spec = _make_simple_spec()
-        spec.feature_groups[0].kernel.lengthscale_prior = PriorSpec(
-            distribution="Uniform", params={"low": 0.0, "high": 1.0}
-        )
-        result = validate_dsl(spec)
-        assert not result.is_valid
-        assert any("unsupported distribution" in error for error in result.errors)
+        with pytest.raises(ValidationError):
+            PriorSpec(distribution="Uniform", params={"low": 0.0, "high": 1.0})
 
     def test_period_prior_requires_periodic_kernel(self) -> None:
         spec = _make_simple_spec()

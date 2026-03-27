@@ -16,12 +16,17 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
     PriorSpec,
     SpectralMixtureInitialization,
 )
 
 
 class TestPriorSpec:
+    def test_distribution_is_typed_enum(self) -> None:
+        prior = PriorSpec(distribution=PriorDistribution.NORMAL)
+        assert prior.distribution == PriorDistribution.NORMAL
+
     def test_default_params_is_empty_dict(self) -> None:
         prior = PriorSpec(distribution="Normal")
         assert prior.params == {}

@@ -49,6 +49,7 @@ from gparchitect.dsl.schema import (
     MeanFunctionType,
     MeanSpec,
     ModelClass,
+    PriorDistribution,
     PriorSpec,
     SpectralMixtureInitialization,
 )
@@ -66,17 +67,17 @@ def _build_gpytorch_prior(prior_spec: PriorSpec | None):  # noqa: ANN201
 
     from gpytorch.priors.torch_priors import GammaPrior, LogNormalPrior, NormalPrior
 
-    if prior_spec.distribution == "Normal":
+    if prior_spec.distribution == PriorDistribution.NORMAL:
         return NormalPrior(
             loc=prior_spec.params["loc"],
             scale=prior_spec.params["scale"],
         )
-    if prior_spec.distribution == "LogNormal":
+    if prior_spec.distribution == PriorDistribution.LOG_NORMAL:
         return LogNormalPrior(
             loc=prior_spec.params["loc"],
             scale=prior_spec.params["scale"],
         )
-    if prior_spec.distribution == "Gamma":
+    if prior_spec.distribution == PriorDistribution.GAMMA:
         return GammaPrior(
             concentration=prior_spec.params["concentration"],
             rate=prior_spec.params["rate"],

@@ -38,6 +38,7 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelType,
     ModelClass,
+    PriorDistribution,
     PriorSpec,
     SpectralMixtureInitialization,
 )
@@ -47,11 +48,15 @@ logger = logging.getLogger(__name__)
 _PERIODIC_ONLY_KERNELS = {KernelType.PERIODIC}
 _MULTITASK_MODELS = {ModelClass.MULTI_TASK_GP}
 _MODEL_LIST_MODELS = {ModelClass.MODEL_LIST_GP}
-_SUPPORTED_PRIOR_DISTRIBUTIONS = {"Normal", "LogNormal", "Gamma"}
+_SUPPORTED_PRIOR_DISTRIBUTIONS = {
+    PriorDistribution.NORMAL,
+    PriorDistribution.LOG_NORMAL,
+    PriorDistribution.GAMMA,
+}
 _REQUIRED_PRIOR_PARAMS = {
-    "Normal": {"loc", "scale"},
-    "LogNormal": {"loc", "scale"},
-    "Gamma": {"concentration", "rate"},
+    PriorDistribution.NORMAL: {"loc", "scale"},
+    PriorDistribution.LOG_NORMAL: {"loc", "scale"},
+    PriorDistribution.GAMMA: {"concentration", "rate"},
 }
 _LENGTHSCALE_PRIOR_KERNELS = {
     KernelType.RBF,
