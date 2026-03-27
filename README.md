@@ -83,7 +83,8 @@ polynomial kernels accept `degree 3` and `offset 1.5`, infinite-width BNN kernel
 hints such as `initialized from data` or `initialized from the empirical spectrum`, and
 exponential-decay kernels accept `power 2.5` and `offset 0.2`.
 Supported prior phrases can also be translated into the DSL for supported targets, for
-example `normal prior on lengthscale loc 0 scale 1` or `gamma prior on noise concentration 2 rate 0.5`.
+example `normal prior on lengthscale loc 0 scale 1`, `gamma prior on noise concentration 2 rate 0.5`,
+or target-first variants such as `length scale has a normal prior with mean 0 std 1`.
 Mean functions accept `constant mean`, `zero mean`, or `linear mean`. For independent-output
 ModelListGP specifications you can target individual outputs with phrases such as `output 1 uses
 zero mean` and `output 2 uses linear mean`. For MultiTaskGP you can target individual task values

@@ -125,12 +125,56 @@ _MEAN_PATTERN = re.compile(
     r"(constant|zero|linear)\s+mean\b(?:\s+for\s+(output|task)\s+(\d+))?",
     re.IGNORECASE,
 )
-_PRIOR_PATTERN = re.compile(
-    r"\b(?P<distribution>normal|lognormal|gamma|halfcauchy|uniform)\s+prior\s+on\s+"
-    r"(?P<target>lengthscale|outputscale|period|noise)\b(?P<params>.*?)(?="
-    r"\b(?:normal|lognormal|gamma|halfcauchy|uniform)\s+prior\s+on\b|$)",
-    re.IGNORECASE,
+_PRIOR_DISTRIBUTION_ALIASES = {
+    "lognormal": PriorDistribution.LOG_NORMAL,
+    "log-normal": PriorDistribution.LOG_NORMAL,
+    "halfcauchy": PriorDistribution.HALF_CAUCHY,
+    "half-cauchy": PriorDistribution.HALF_CAUCHY,
+    "half cauchy": PriorDistribution.HALF_CAUCHY,
+    "normal": PriorDistribution.NORMAL,
+    "gamma": PriorDistribution.GAMMA,
+    "uniform": PriorDistribution.UNIFORM,
+}
+_PRIOR_TARGET_ALIASES = {
+    "lengthscale": "lengthscale",
+    "length scale": "lengthscale",
+    "outputscale": "outputscale",
+    "output scale": "outputscale",
+    "period": "period",
+    "period length": "period",
+    "noise": "noise",
+    "observation noise": "noise",
+    "noise variance": "noise",
+}
+_PRIOR_DISTRIBUTION_PATTERN = (
+    r"lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform"
 )
+_PRIOR_TARGET_PATTERN = (
+    r"lengthscale|length\s+scale|outputscale|output\s+scale|period(?:\s+length)?|"
+    r"observation\s+noise|noise\s+variance|noise"
+)
+_PRIOR_END_PATTERN = (
+    r"(?=(?:\b(?:lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform)"
+    r"\s+prior\s+(?:on|for)\b)|(?:\b(?:lengthscale|length\s+scale|outputscale|output\s+scale|"
+    r"period(?:\s+length)?|observation\s+noise|noise\s+variance|noise)\b\s+"
+    r"(?:has|have|uses?|using|with|follows?)\s+(?:a|an)?\s*"
+    r"(?:lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform)"
+    r"\s+prior\b)|(?:[,;]|(?<!\d)\.(?!\d))|$)"
+)
+_PRIOR_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(
+        rf"\b(?P<distribution>{_PRIOR_DISTRIBUTION_PATTERN})\s+prior\s+(?:on|for)\s+"
+        rf"(?P<target>{_PRIOR_TARGET_PATTERN})\b(?P<params>.*?){_PRIOR_END_PATTERN}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?P<target>{_PRIOR_TARGET_PATTERN})\b\s+"
+        rf"(?:has|have|uses?|using|with|follows?)\s+(?:a|an)?\s*"
+        rf"(?P<distribution>{_PRIOR_DISTRIBUTION_PATTERN})\s+prior\b"
+        rf"(?P<params>.*?){_PRIOR_END_PATTERN}",
+        re.IGNORECASE,
+    ),
+]
 
 _ARD_SUPPORTED_KERNELS = {
     KernelType.RBF,
@@ -149,28 +193,33 @@ _PRIOR_DISTRIBUTION_MAP = {
 }
 _PRIOR_PARAM_PATTERNS: dict[PriorDistribution, dict[str, re.Pattern[str]]] = {
     PriorDistribution.NORMAL: {
-        "loc": re.compile(r"\bloc\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
-        "scale": re.compile(r"\bscale\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "loc": re.compile(r"\b(?:loc|mean|mu)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "scale": re.compile(r"\b(?:scale|std(?:dev)?|sigma)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
     },
     PriorDistribution.LOG_NORMAL: {
-        "loc": re.compile(r"\bloc\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
-        "scale": re.compile(r"\bscale\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "loc": re.compile(r"\b(?:loc|mean|mu)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "scale": re.compile(r"\b(?:scale|std(?:dev)?|sigma)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
     },
     PriorDistribution.GAMMA: {
         "concentration": re.compile(
-            r"\bconcentration\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
+            r"\b(?:concentration|shape|alpha)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
             re.IGNORECASE,
         ),
-        "rate": re.compile(r"\brate\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "rate": re.compile(r"\b(?:rate|beta)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
     },
     PriorDistribution.HALF_CAUCHY: {
-        "scale": re.compile(r"\bscale\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "scale": re.compile(r"\b(?:scale|beta)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
     },
     PriorDistribution.UNIFORM: {
-        "a": re.compile(r"\ba\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
-        "b": re.compile(r"\bb\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "a": re.compile(r"\b(?:a|low|lower|min(?:imum)?)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "b": re.compile(r"\b(?:b|high|upper|max(?:imum)?)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
     },
 }
+_UNIFORM_RANGE_PATTERN = re.compile(
+    r"\b(?:between\s*(-?[0-9]*\.?[0-9]+)\s+and\s*(-?[0-9]*\.?[0-9]+)|"
+    r"from\s*(-?[0-9]*\.?[0-9]+)\s+to\s*(-?[0-9]*\.?[0-9]+))\b",
+    re.IGNORECASE,
+)
 
 
 def _extract_rq_alpha(instruction: str) -> float | None:
@@ -314,26 +363,47 @@ def _parse_prior_params(distribution: PriorDistribution, params_text: str) -> di
         match = pattern.search(params_text)
         if match is not None:
             extracted[param_name] = float(match.group(1))
+
+    if distribution == PriorDistribution.UNIFORM and ("a" not in extracted or "b" not in extracted):
+        range_match = _UNIFORM_RANGE_PATTERN.search(params_text)
+        if range_match is not None:
+            lower = range_match.group(1) or range_match.group(3)
+            upper = range_match.group(2) or range_match.group(4)
+            if lower is not None and upper is not None:
+                extracted.setdefault("a", float(lower))
+                extracted.setdefault("b", float(upper))
+
     return extracted
+
+
+def _normalize_prior_distribution(raw_distribution: str) -> PriorDistribution:
+    """Normalize a parsed natural-language prior distribution name."""
+    return _PRIOR_DISTRIBUTION_ALIASES[raw_distribution.lower()]
+
+
+def _normalize_prior_target(raw_target: str) -> str:
+    """Normalize a parsed natural-language prior target name."""
+    return _PRIOR_TARGET_ALIASES[raw_target.lower()]
 
 
 def _apply_detected_priors(instruction: str, kernel_spec: KernelSpec, noise: NoiseSpec) -> None:
     """Apply parsed prior phrases to a kernel or noise spec in place."""
-    for match in _PRIOR_PATTERN.finditer(instruction):
-        distribution = _PRIOR_DISTRIBUTION_MAP[match.group("distribution").lower()]
-        prior = PriorSpec(
-            distribution=distribution,
-            params=_parse_prior_params(distribution, match.group("params")),
-        )
-        target = match.group("target").lower()
-        if target == "lengthscale":
-            kernel_spec.lengthscale_prior = prior
-        elif target == "outputscale":
-            kernel_spec.outputscale_prior = prior
-        elif target == "period":
-            kernel_spec.period_prior = prior
-        elif target == "noise":
-            noise.prior = prior
+    for pattern in _PRIOR_PATTERNS:
+        for match in pattern.finditer(instruction):
+            distribution = _normalize_prior_distribution(match.group("distribution"))
+            prior = PriorSpec(
+                distribution=distribution,
+                params=_parse_prior_params(distribution, match.group("params")),
+            )
+            target = _normalize_prior_target(match.group("target"))
+            if target == "lengthscale":
+                kernel_spec.lengthscale_prior = prior
+            elif target == "outputscale":
+                kernel_spec.outputscale_prior = prior
+            elif target == "period":
+                kernel_spec.period_prior = prior
+            elif target == "noise":
+                noise.prior = prior
 
 
 def _default_execution_spec(model_class: ModelClass) -> ExecutionSpec:

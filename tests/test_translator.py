@@ -149,6 +149,15 @@ class TestTranslateNoise:
         assert spec.noise.prior.distribution == PriorDistribution.GAMMA
         assert spec.noise.prior.params == {"concentration": 2.0, "rate": 0.5}
 
+    def test_noise_target_first_gamma_prior_phrase_is_parsed(self) -> None:
+        spec = translate_to_dsl(
+            "Use an rbf kernel where observation noise has a gamma prior with shape 2.0 beta 0.5",
+            input_dim=2,
+        )
+        assert spec.noise.prior is not None
+        assert spec.noise.prior.distribution == PriorDistribution.GAMMA
+        assert spec.noise.prior.params == {"concentration": 2.0, "rate": 0.5}
+
 
 class TestTranslateMeans:
     def test_default_mean_is_unset(self) -> None:
@@ -396,3 +405,23 @@ class TestTranslateKernelSpecificParameters:
         assert kernel.period_prior.distribution == PriorDistribution.UNIFORM
         assert kernel.outputscale_prior is not None
         assert kernel.outputscale_prior.distribution == PriorDistribution.HALF_CAUCHY
+
+    def test_target_first_prior_phrases_with_synonyms_are_parsed(self) -> None:
+        spec = translate_to_dsl(
+            (
+                "Use a periodic kernel where length scale has a normal prior with mean 0.0 std 1.0, "
+                "period length has a uniform prior between 0.5 and 3.0, and output scale has a "
+                "half-cauchy prior with beta 0.75"
+            ),
+            input_dim=1,
+        )
+        kernel = spec.feature_groups[0].kernel
+        assert kernel.lengthscale_prior is not None
+        assert kernel.lengthscale_prior.distribution == PriorDistribution.NORMAL
+        assert kernel.lengthscale_prior.params == {"loc": 0.0, "scale": 1.0}
+        assert kernel.period_prior is not None
+        assert kernel.period_prior.distribution == PriorDistribution.UNIFORM
+        assert kernel.period_prior.params == {"a": 0.5, "b": 3.0}
+        assert kernel.outputscale_prior is not None
+        assert kernel.outputscale_prior.distribution == PriorDistribution.HALF_CAUCHY
+        assert kernel.outputscale_prior.params == {"scale": 0.75}
