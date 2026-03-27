@@ -529,6 +529,33 @@ class TestBuildModelMocked:
         assert model.covar_module.outputscale_prior is not None
         assert model.likelihood.noise_covar.noise_prior is not None
 
+    def test_single_task_gp_applies_half_cauchy_and_uniform_priors(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import torch
+        from gpytorch.priors.torch_priors import HalfCauchyPrior, UniformPrior
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_continuous_spec(input_dim=2)
+        spec.feature_groups[0].kernel = KernelSpec(
+            kernel_type=KernelType.PERIODIC,
+            ard=True,
+            lengthscale_prior=PriorSpec(distribution="HalfCauchy", params={"scale": 0.75}),
+            period_prior=PriorSpec(distribution="Uniform", params={"a": 0.1, "b": 2.0}),
+        )
+        spec.noise = NoiseSpec(
+            fixed=False,
+            prior=PriorSpec(distribution="HalfCauchy", params={"scale": 0.2}),
+        )
+
+        train_X = torch.zeros(5, 2, dtype=torch.double)
+        train_Y = torch.zeros(5, 1, dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model.covar_module.base_kernel.lengthscale_prior, HalfCauchyPrior)
+        assert isinstance(model.covar_module.base_kernel.period_length_prior, UniformPrior)
+        assert isinstance(model.likelihood.noise_covar.noise_prior, HalfCauchyPrior)
+
     def test_model_list_gp_supports_per_output_means(self) -> None:
         self._skip_if_no_torch_botorch()
         import gpytorch

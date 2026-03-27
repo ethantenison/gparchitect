@@ -65,7 +65,7 @@ def _build_gpytorch_prior(prior_spec: PriorSpec | None):  # noqa: ANN201
     if prior_spec is None:
         return None
 
-    from gpytorch.priors.torch_priors import GammaPrior, LogNormalPrior, NormalPrior
+    from gpytorch.priors.torch_priors import GammaPrior, HalfCauchyPrior, LogNormalPrior, NormalPrior, UniformPrior
 
     if prior_spec.distribution == PriorDistribution.NORMAL:
         return NormalPrior(
@@ -82,6 +82,10 @@ def _build_gpytorch_prior(prior_spec: PriorSpec | None):  # noqa: ANN201
             concentration=prior_spec.params["concentration"],
             rate=prior_spec.params["rate"],
         )
+    if prior_spec.distribution == PriorDistribution.HALF_CAUCHY:
+        return HalfCauchyPrior(scale=prior_spec.params["scale"])
+    if prior_spec.distribution == PriorDistribution.UNIFORM:
+        return UniformPrior(a=prior_spec.params["a"], b=prior_spec.params["b"])
 
     raise ValueError(f"Unsupported prior distribution: {prior_spec.distribution}")
 

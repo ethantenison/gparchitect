@@ -15,6 +15,7 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
     PriorSpec,
 )
 from gparchitect.validation.validator import ValidationResult, validate_dsl, validate_or_raise
@@ -230,7 +231,10 @@ class TestValidateNoise:
         spec = _make_simple_spec()
         spec.noise.fixed = True
         spec.noise.noise_value = 1e-4
-        spec.noise.prior = PriorSpec(distribution="Gamma", params={"concentration": 2.0, "rate": 0.5})
+        spec.noise.prior = PriorSpec(
+            distribution=PriorDistribution.GAMMA,
+            params={"concentration": 2.0, "rate": 0.5},
+        )
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("noise.prior" in error for error in result.errors)
@@ -319,19 +323,56 @@ class TestValidatePriors:
     def test_valid_prior_passes(self) -> None:
         spec = _make_simple_spec()
         spec.feature_groups[0].kernel.lengthscale_prior = PriorSpec(
-            distribution="Normal", params={"loc": 0.0, "scale": 1.0}
+            distribution=PriorDistribution.NORMAL,
+            params={"loc": 0.0, "scale": 1.0},
         )
         result = validate_dsl(spec)
         assert result.is_valid
 
+    def test_half_cauchy_prior_passes_with_required_params(self) -> None:
+        spec = _make_simple_spec()
+        spec.feature_groups[0].kernel.outputscale_prior = PriorSpec(
+            distribution=PriorDistribution.HALF_CAUCHY,
+            params={"scale": 1.0},
+        )
+        result = validate_dsl(spec)
+        assert result.is_valid
+
+    def test_uniform_prior_passes_with_required_params(self) -> None:
+        spec = _make_simple_spec()
+        spec.noise.prior = PriorSpec(
+            distribution=PriorDistribution.UNIFORM,
+            params={"a": 1e-4, "b": 0.5},
+        )
+        result = validate_dsl(spec)
+        assert result.is_valid
+
+    def test_half_cauchy_prior_requires_scale(self) -> None:
+        spec = _make_simple_spec()
+        spec.feature_groups[0].kernel.outputscale_prior = PriorSpec(
+            distribution=PriorDistribution.HALF_CAUCHY,
+            params={},
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("scale" in error for error in result.errors)
+
+    def test_uniform_prior_requires_bounds(self) -> None:
+        spec = _make_simple_spec()
+        spec.noise.prior = PriorSpec(distribution=PriorDistribution.UNIFORM, params={"a": 0.0})
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("b" in error for error in result.errors)
+
     def test_unsupported_prior_distribution_fails(self) -> None:
         with pytest.raises(ValidationError):
-            PriorSpec(distribution="Uniform", params={"low": 0.0, "high": 1.0})
+            PriorSpec(distribution="Laplace", params={"loc": 0.0, "scale": 1.0})
 
     def test_period_prior_requires_periodic_kernel(self) -> None:
         spec = _make_simple_spec()
         spec.feature_groups[0].kernel.period_prior = PriorSpec(
-            distribution="LogNormal", params={"loc": 0.0, "scale": 1.0}
+            distribution=PriorDistribution.LOG_NORMAL,
+            params={"loc": 0.0, "scale": 1.0},
         )
         result = validate_dsl(spec)
         assert not result.is_valid
@@ -343,7 +384,10 @@ class TestValidatePriors:
             kernel_type=KernelType.RBF,
             composition=CompositionType.ADDITIVE,
             children=[KernelSpec(kernel_type=KernelType.RBF)],
-            outputscale_prior=PriorSpec(distribution="Gamma", params={"concentration": 2.0, "rate": 0.5}),
+            outputscale_prior=PriorSpec(
+                distribution=PriorDistribution.GAMMA,
+                params={"concentration": 2.0, "rate": 0.5},
+            ),
         )
         result = validate_dsl(spec)
         assert not result.is_valid
@@ -375,7 +419,7 @@ class TestValidateComposition:
         assert any("composition=none" in error for error in result.errors)
 
 
-class TestValidateKernelSpecificParameters:
+class TestValidateKernelParameterConstraints:
     def test_invalid_polynomial_power_fails(self) -> None:
         spec = _make_simple_spec()
         spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.POLYNOMIAL, polynomial_power=0)

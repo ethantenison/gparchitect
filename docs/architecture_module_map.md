@@ -113,7 +113,8 @@ For the current validated contract:
 
 - `MultiTaskGP` uses long-format data with one observed output column and a task indicator.
 - Targeted multitask overrides require an explicit task domain in `GPSpec.task_values`.
-- Supported priors are a validated subset that the builder applies directly; unsupported
+- Supported priors are a validated subset (`Normal`, `LogNormal`, `Gamma`, `HalfCauchy`,
+  and `Uniform`) that the builder applies directly; unsupported
   prior placements must be rejected during validation.
 
 **Boundary rule**: This module has NO dependencies on other gparchitect modules.

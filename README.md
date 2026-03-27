@@ -84,6 +84,8 @@ Mean functions accept `constant mean`, `zero mean`, or `linear mean`. For indepe
 ModelListGP specifications you can target individual outputs with phrases such as `output 1 uses
 zero mean` and `output 2 uses linear mean`. For MultiTaskGP you can target individual task values
 with phrases such as `zero mean for task 0` and `constant mean for task 1`.
+The current validated prior subset in the DSL is `Normal`, `LogNormal`, `Gamma`,
+`HalfCauchy`, and `Uniform` for supported parameter placements.
 When a `ModelListGP` instruction does not specify output-specific feature ownership,
 GPArchitect falls back to one shared feature-group specification that is reused across
 the independent output models rather than fabricating separate per-output covariance specs.

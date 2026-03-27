@@ -52,11 +52,15 @@ _SUPPORTED_PRIOR_DISTRIBUTIONS = {
     PriorDistribution.NORMAL,
     PriorDistribution.LOG_NORMAL,
     PriorDistribution.GAMMA,
+    PriorDistribution.HALF_CAUCHY,
+    PriorDistribution.UNIFORM,
 }
 _REQUIRED_PRIOR_PARAMS = {
     PriorDistribution.NORMAL: {"loc", "scale"},
     PriorDistribution.LOG_NORMAL: {"loc", "scale"},
     PriorDistribution.GAMMA: {"concentration", "rate"},
+    PriorDistribution.HALF_CAUCHY: {"scale"},
+    PriorDistribution.UNIFORM: {"a", "b"},
 }
 _LENGTHSCALE_PRIOR_KERNELS = {
     KernelType.RBF,

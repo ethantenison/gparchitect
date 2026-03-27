@@ -27,6 +27,12 @@ class TestPriorSpec:
         prior = PriorSpec(distribution=PriorDistribution.NORMAL)
         assert prior.distribution == PriorDistribution.NORMAL
 
+    def test_additional_supported_distributions_are_typed(self) -> None:
+        half_cauchy = PriorSpec(distribution=PriorDistribution.HALF_CAUCHY, params={"scale": 1.0})
+        uniform = PriorSpec(distribution=PriorDistribution.UNIFORM, params={"a": 0.0, "b": 1.0})
+        assert half_cauchy.distribution == PriorDistribution.HALF_CAUCHY
+        assert uniform.distribution == PriorDistribution.UNIFORM
+
     def test_default_params_is_empty_dict(self) -> None:
         prior = PriorSpec(distribution="Normal")
         assert prior.params == {}

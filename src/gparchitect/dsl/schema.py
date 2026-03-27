@@ -89,6 +89,8 @@ class PriorDistribution(str, Enum):
     NORMAL = "Normal"
     LOG_NORMAL = "LogNormal"
     GAMMA = "Gamma"
+    HALF_CAUCHY = "HalfCauchy"
+    UNIFORM = "Uniform"
 
 
 class PriorSpec(BaseModel):
