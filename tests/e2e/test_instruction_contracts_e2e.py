@@ -181,7 +181,10 @@ def test_multitask_instruction_contract_runs_end_to_end() -> None:
     """MultiTaskGP instruction should fit end to end with per-task means."""
     _require_runtime_dependencies()
     import gpytorch
+    import torch
     from botorch.models import MultiTaskGP
+
+    torch.manual_seed(0)
 
     rows = [(index / 10, (index % 5) / 4, task) for task in (0, 1) for index in range(10)]
     dataframe = pd.DataFrame(

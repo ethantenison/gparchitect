@@ -288,3 +288,50 @@ def test_three_group_mixed_kernel_example_runs_end_to_end() -> None:
     assert third_group["kernel"]["kernel_type"] == "ExponentialDecay"
     assert third_group["kernel"]["exponential_decay_power"] == pytest.approx(1.8)
     assert third_group["kernel"]["exponential_decay_offset"] == pytest.approx(0.1)
+
+
+def test_multitask_kernel_example_runs_end_to_end() -> None:
+    """Example: multitask GP with per-task means and feature-specific kernels."""
+    _require_runtime_dependencies()
+    import torch
+
+    torch.manual_seed(0)
+
+    rows = [(index / 10, (index % 5) / 4, task) for task in (0, 1) for index in range(10)]
+    dataframe = pd.DataFrame(
+        {
+            "x1": [first for first, _, _ in rows],
+            "x2": [second for _, second, _ in rows],
+            "task": [task for _, _, task in rows],
+            "y": [(0.25 * first * first) + (0.15 * second) + (0.3 * task) + 0.05 for first, second, task in rows],
+        }
+    )
+
+    model, log = run_gparchitect(
+        dataframe=dataframe,
+        instruction=(
+            "Use a multi-task gp with an rbf kernel on x1 and a matern3/2 kernel on x2, "
+            "zero mean for task 0, and constant mean for task 1."
+        ),
+        input_columns=["x1", "x2"],
+        output_columns=["y"],
+        task_column="task",
+        max_retries=0,
+    )
+
+    assert model is not None
+    assert log.final_success is True
+    assert len(log.attempts) == 1
+    assert log.attempts[0].fit_success is True
+
+    spec_snapshot = log.attempts[0].spec_snapshot
+    assert spec_snapshot["model_class"] == "MultiTaskGP"
+    assert spec_snapshot["output_means"]["0"]["mean_type"] == "Zero"
+    assert spec_snapshot["output_means"]["1"]["mean_type"] == "Constant"
+
+    feature_groups = spec_snapshot["feature_groups"]
+    assert len(feature_groups) == 2
+    assert feature_groups[0]["feature_indices"] == [0]
+    assert feature_groups[0]["kernel"]["kernel_type"] == "RBF"
+    assert feature_groups[1]["feature_indices"] == [1]
+    assert feature_groups[1]["kernel"]["kernel_type"] == "Matern32"

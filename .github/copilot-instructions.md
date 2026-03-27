@@ -123,6 +123,13 @@ Avoid:
 
 Max line length: 120 characters.
 
+### Pylance Quality Gate (STRICT)
+
+- Generated/modified Python code must be **Pylance-clean** in edited files.
+- After edits, validate diagnostics in touched files before finalizing.
+- Prefer fixing root typing issues (narrowing, casts, typed helpers) over suppressions.
+- Avoid blanket `# type: ignore` usage; if unavoidable, use the narrowest code and explain why.
+
 ---
 
 ## Testing Expectations

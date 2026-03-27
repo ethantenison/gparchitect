@@ -151,6 +151,8 @@ class TestFitAndValidateMocked:
         self._skip_if_no_botorch()
         import torch
 
+        torch.manual_seed(0)
+
         from gparchitect.builders.builder import build_model_from_dsl
         from gparchitect.dsl.schema import (
             FeatureGroupSpec,

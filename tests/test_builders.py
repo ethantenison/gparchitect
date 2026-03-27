@@ -554,9 +554,45 @@ class TestBuildModelMocked:
         assert isinstance(model.mean_module.base_means[0], gpytorch.means.ZeroMean)
         assert isinstance(model.mean_module.base_means[1], gpytorch.means.ConstantMean)
         assert isinstance(model.likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood)
-        assert isinstance(model.covar_module, gpytorch.kernels.ScaleKernel)
-        assert isinstance(model.covar_module.base_kernel, gpytorch.kernels.RBFKernel)
-        assert isinstance(model.task_covar_module, gpytorch.kernels.IndexKernel)
+        assert isinstance(model.covar_module, gpytorch.kernels.ProductKernel)
+        assert isinstance(model.covar_module.kernels[0], gpytorch.kernels.ScaleKernel)
+        assert isinstance(model.covar_module.kernels[0].base_kernel, gpytorch.kernels.RBFKernel)
+        assert type(model.covar_module.kernels[1]).__name__ == "PositiveIndexKernel"
+
+    def test_multitask_gp_uses_documented_default_likelihood_when_available(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import torch
+        from botorch.models import MultiTaskGP
+
+        from gparchitect.builders.builder import _prepare_inputs, build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="continuous",
+                    feature_indices=[0, 1],
+                    kernel=KernelSpec(kernel_type=KernelType.RBF),
+                )
+            ],
+            noise=NoiseSpec(),
+            input_dim=3,
+            output_dim=1,
+            task_feature_index=2,
+            multitask_rank=1,
+        )
+
+        train_X = torch.tensor(
+            [[0.0, 0.1, 0.0], [1.0, 0.2, 0.0], [0.0, 0.1, 1.0], [1.0, 0.2, 1.0]],
+            dtype=torch.double,
+        )
+        train_Y = torch.tensor([[0.0], [1.0], [0.5], [1.5]], dtype=torch.double)
+
+        model = build_model_from_dsl(spec, train_X, train_Y)
+        full_X, full_Y, _ = _prepare_inputs(spec, train_X, train_Y)
+        reference_model = MultiTaskGP(train_X=full_X, train_Y=full_Y, task_feature=-1)
+
+        assert type(model.likelihood) is type(reference_model.likelihood)
 
 
 class TestDataPrepare:

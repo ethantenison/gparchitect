@@ -446,7 +446,7 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
     if spec.model_class == ModelClass.SINGLE_TASK_GP:
         covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
         mean_module = _build_mean_module(spec, input_size=full_X.shape[-1])
-        likelihood = _build_likelihood(spec, train_Y=full_Y)
+        likelihood = _build_likelihood(spec, train_Y=full_Y, model_class=spec.model_class)
         model = botorch.models.SingleTaskGP(
             train_X=full_X,
             train_Y=full_Y,
@@ -468,7 +468,13 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
             num_non_task_features=len(feature_index_map),
             combined_input_size=full_X.shape[-1],
         )
-        likelihood = _build_likelihood(spec, train_Y=full_Y)
+        likelihood = _build_likelihood(
+            spec,
+            train_Y=full_Y,
+            model_class=spec.model_class,
+            num_tasks=len(task_values),
+            task_feature_index=-1,
+        )
         model = botorch.models.MultiTaskGP(
             train_X=full_X,
             train_Y=full_Y,
@@ -485,7 +491,7 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
             output_train_Y = full_Y[:, output_idx : output_idx + 1]
             covar_module = _build_covariance_module(spec, feature_index_map, full_X, output_train_Y)
             mean_module = _build_mean_module(spec, input_size=full_X.shape[-1], output_index=output_idx)
-            likelihood = _build_likelihood(spec, train_Y=output_train_Y)
+            likelihood = _build_likelihood(spec, train_Y=output_train_Y, model_class=ModelClass.SINGLE_TASK_GP)
             single_model = botorch.models.SingleTaskGP(
                 train_X=full_X,
                 train_Y=output_train_Y,
@@ -504,7 +510,14 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
     return model
 
 
-def _build_likelihood(spec: GPSpec, *, train_Y):  # noqa: ANN201, ANN001
+def _build_likelihood(
+    spec: GPSpec,
+    *,
+    train_Y,  # noqa: ANN001
+    model_class: ModelClass,
+    num_tasks: int | None = None,
+    task_feature_index: int | None = None,
+):  # noqa: ANN201
     """Build a GPyTorch likelihood from the noise specification.
 
     Args:
@@ -524,4 +537,42 @@ def _build_likelihood(spec: GPSpec, *, train_Y):  # noqa: ANN201, ANN001
             fixed_noise = torch.full_like(train_Y, noise_val)
         return gpytorch.likelihoods.FixedNoiseGaussianLikelihood(noise=fixed_noise)
 
+    if model_class == ModelClass.MULTI_TASK_GP:
+        multitask_likelihood = _build_multitask_default_likelihood(
+            num_tasks=num_tasks,
+            task_feature_index=task_feature_index,
+        )
+        if multitask_likelihood is not None:
+            return multitask_likelihood
+        return None
+
     return gpytorch.likelihoods.GaussianLikelihood()
+
+
+def _build_multitask_default_likelihood(*, num_tasks: int | None, task_feature_index: int | None):  # noqa: ANN201
+    """Build the documented default multitask likelihood when available.
+
+    Falls back to ``None`` when the installed dependency stack does not expose
+    ``HadamardGaussianLikelihood`` so BoTorch can apply its own default.
+    """
+    if num_tasks is None or task_feature_index is None:
+        return None
+
+    import torch
+    from botorch.models.utils.gpytorch_modules import MIN_INFERRED_NOISE_LEVEL
+    from gpytorch.constraints import GreaterThan
+    from gpytorch.priors.torch_priors import LogNormalPrior
+    from gpytorch.likelihoods.hadamard_gaussian_likelihood import HadamardGaussianLikelihood
+
+
+    noise_prior = LogNormalPrior(loc=-4.0, scale=1.0)
+    return HadamardGaussianLikelihood(
+        num_tasks=num_tasks,
+        batch_shape=torch.Size(),
+        noise_prior=noise_prior,
+        noise_constraint=GreaterThan(
+            MIN_INFERRED_NOISE_LEVEL,
+            initial_value=noise_prior.mode,
+        ),
+        task_feature_index=task_feature_index,
+    )
