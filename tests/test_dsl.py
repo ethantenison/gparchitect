@@ -8,6 +8,7 @@ import pytest
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -171,6 +172,7 @@ class TestGPSpec:
         assert spec.task_feature_index is None
         assert spec.task_values is None
         assert spec.multitask_rank is None
+        assert spec.execution == ExecutionSpec()
 
     def test_full_spec(self) -> None:
         spec = GPSpec(
@@ -233,6 +235,12 @@ class TestGPSpec:
         )
         data = json.loads(spec.model_dump_json())
         assert data["task_values"] == [0, 1]
+
+    def test_execution_spec_serializes(self) -> None:
+        spec = GPSpec(execution=ExecutionSpec(input_scaling=False, outcome_standardization=False))
+        data = json.loads(spec.model_dump_json())
+        assert data["execution"]["input_scaling"] is False
+        assert data["execution"]["outcome_standardization"] is False
 
     def test_description_field(self) -> None:
         spec = GPSpec(description="Test spec")

@@ -225,6 +225,7 @@ def _switch_to_single_task(spec: GPSpec, error_message: str) -> str:
     spec.task_values = None
     spec.multitask_rank = None
     spec.output_dim = 1
+    spec.execution.outcome_standardization = True
     spec.feature_groups = [
         FeatureGroupSpec(
             name="all_features",

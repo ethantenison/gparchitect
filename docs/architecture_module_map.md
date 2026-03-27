@@ -108,14 +108,17 @@ Kernel construction follows these builder-side rules:
 - `MeanSpec` — a shared or per-output mean-function specification
 - `NoiseSpec` — noise model specification
 - `PriorSpec` — hyperparameter prior specification
+- `ExecutionSpec` — explicit preprocessing and outcome-transform semantics
 
 For the current validated contract:
 
 - `MultiTaskGP` uses long-format data with one observed output column and a task indicator.
-- Targeted multitask overrides require an explicit task domain in `GPSpec.task_values`.
+- `MultiTaskGP` requires an explicit task domain in `GPSpec.task_values`.
 - Supported priors are a validated subset (`Normal`, `LogNormal`, `Gamma`, `HalfCauchy`,
   and `Uniform`) that the builder applies directly; unsupported
   prior placements must be rejected during validation.
+- Execution semantics such as input scaling and outcome standardization live in
+  `GPSpec.execution` so they are machine-readable contract surface.
 
 **Boundary rule**: This module has NO dependencies on other gparchitect modules.
 It must remain import-free from the rest of the codebase.
@@ -156,6 +159,8 @@ Translation rules that matter for contract alignment:
   feature-group specification reused across output models.
 - When targeted multitask means are parsed from natural language, translation records
   the explicit task values in `GPSpec.task_values`.
+- Translation can parse supported prior phrases into `PriorSpec` objects attached to
+  kernel or noise targets.
 
 **Boundary rule**: The translator must NEVER import from `builders`, `fitting`,
 `revision`, or `logging`. It may only import from `dsl`.
@@ -192,6 +197,7 @@ Builder responsibilities include:
 - Applying optional per-output means for `ModelListGP`
 - Applying optional per-task means for `MultiTaskGP`
 - Applying the supported validated subset of DSL priors to kernels and learnable noise
+- Respecting the execution semantics in `GPSpec.execution`
 - Selecting the likelihood implementation from the DSL noise spec and model class
 
 **Boundary rule**: Builders import `dsl` and `torch`/`botorch`/`gpytorch`.

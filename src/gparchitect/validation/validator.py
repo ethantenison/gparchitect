@@ -114,6 +114,7 @@ def validate_dsl(spec: GPSpec) -> ValidationResult:
     _check_model_class_consistency(spec, result)
     _check_mean_spec(spec, result)
     _check_noise(spec, result)
+    _check_execution(spec, result)
     _check_priors(spec, result)
 
     if result.is_valid:
@@ -261,6 +262,8 @@ def _check_model_class_consistency(spec: GPSpec, result: ValidationResult) -> No
     if spec.model_class in _MULTITASK_MODELS:
         if spec.task_feature_index is None:
             result.errors.append("MultiTaskGP requires task_feature_index to be set.")
+        if spec.task_values is None:
+            result.errors.append("MultiTaskGP requires explicit task_values.")
         if spec.output_dim != 1:
             result.errors.append(
                 f"MultiTaskGP currently supports long-format training data with output_dim=1, got {spec.output_dim}."
@@ -322,6 +325,11 @@ def _check_noise(spec: GPSpec, result: ValidationResult) -> None:
         result.errors.append(f"noise.noise_value must be non-negative, got {spec.noise.noise_value}.")
     if spec.noise.fixed and spec.noise.prior is not None:
         result.errors.append("noise.prior is not supported when noise.fixed=True.")
+
+
+def _check_execution(spec: GPSpec, result: ValidationResult) -> None:
+    if spec.model_class == ModelClass.MULTI_TASK_GP and spec.execution.outcome_standardization:
+        result.errors.append("MultiTaskGP does not support outcome_standardization in the current contract.")
 
 
 def _check_priors(spec: GPSpec, result: ValidationResult) -> None:

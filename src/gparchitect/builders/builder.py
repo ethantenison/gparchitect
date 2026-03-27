@@ -499,28 +499,28 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
         covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
         mean_module = _build_mean_module(spec, input_size=full_X.shape[-1])
         likelihood = _build_likelihood(spec, train_Y=full_Y, model_class=spec.model_class)
+        outcome_transform = Standardize(m=full_Y.shape[-1]) if spec.execution.outcome_standardization else None
         model = botorch.models.SingleTaskGP(
             train_X=full_X,
             train_Y=full_Y,
             covar_module=covar_module,
             likelihood=likelihood,
             mean_module=mean_module,
-            outcome_transform=Standardize(m=full_Y.shape[-1]),
+            outcome_transform=outcome_transform,
         )
 
     elif spec.model_class == ModelClass.MULTI_TASK_GP:
         if spec.task_feature_index is None:
             raise ValueError("MultiTaskGP requires task_feature_index.")
+        if spec.task_values is None:
+            raise ValueError("MultiTaskGP requires explicit task_values.")
         rank = spec.multitask_rank if spec.multitask_rank is not None else 1
         observed_task_values = sorted({int(value) for value in train_X[:, spec.task_feature_index].long().tolist()})
-        if spec.task_values is None:
-            task_values = observed_task_values
-        else:
-            task_values = sorted(spec.task_values)
-            if observed_task_values != task_values:
-                raise ValueError(
-                    f"Observed task values {observed_task_values} do not match declared task_values {task_values}."
-                )
+        task_values = sorted(spec.task_values)
+        if observed_task_values != task_values:
+            raise ValueError(
+                f"Observed task values {observed_task_values} do not match declared task_values {task_values}."
+            )
         covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
         mean_module = _build_multitask_mean_module(
             spec,
@@ -552,13 +552,14 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
             covar_module = _build_covariance_module(spec, feature_index_map, full_X, output_train_Y)
             mean_module = _build_mean_module(spec, input_size=full_X.shape[-1], output_index=output_idx)
             likelihood = _build_likelihood(spec, train_Y=output_train_Y, model_class=ModelClass.SINGLE_TASK_GP)
+            outcome_transform = Standardize(m=1) if spec.execution.outcome_standardization else None
             single_model = botorch.models.SingleTaskGP(
                 train_X=full_X,
                 train_Y=output_train_Y,
                 covar_module=covar_module,
                 likelihood=likelihood,
                 mean_module=mean_module,
-                outcome_transform=Standardize(m=1),
+                outcome_transform=outcome_transform,
             )
             individual_models.append(single_model)
         model = botorch.models.ModelListGP(*individual_models)

@@ -22,6 +22,8 @@ For `MultiTaskGP`, GPArchitect currently supports long-format data with one obse
 output column plus a task indicator column. When targeted multitask mean overrides are
 parsed from natural language, the translated DSL records the explicit task values that
 those overrides apply to.
+These execution semantics are now represented explicitly in the DSL through an
+execution specification rather than living only as implicit pipeline behavior.
 
 ## Architecture
 
@@ -80,6 +82,8 @@ polynomial kernels accept `degree 3` and `offset 1.5`, infinite-width BNN kernel
 `depth 5`, spectral mixture kernels accept an optional number of mixtures plus initialization
 hints such as `initialized from data` or `initialized from the empirical spectrum`, and
 exponential-decay kernels accept `power 2.5` and `offset 0.2`.
+Supported prior phrases can also be translated into the DSL for supported targets, for
+example `normal prior on lengthscale loc 0 scale 1` or `gamma prior on noise concentration 2 rate 0.5`.
 Mean functions accept `constant mean`, `zero mean`, or `linear mean`. For independent-output
 ModelListGP specifications you can target individual outputs with phrases such as `output 1 uses
 zero mean` and `output 2 uses linear mean`. For MultiTaskGP you can target individual task values
@@ -89,6 +93,8 @@ The current validated prior subset in the DSL is `Normal`, `LogNormal`, `Gamma`,
 When a `ModelListGP` instruction does not specify output-specific feature ownership,
 GPArchitect falls back to one shared feature-group specification that is reused across
 the independent output models rather than fabricating separate per-output covariance specs.
+For `MultiTaskGP`, the DSL now requires an explicit `task_values` domain before validation
+and model building proceed.
 
 ## CLI
 

@@ -11,6 +11,7 @@ import pytest
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -464,6 +465,22 @@ class TestBuildModelMocked:
         assert isinstance(model, SingleTaskGP)
         assert model.outcome_transform is not None
 
+    def test_single_task_gp_can_disable_outcome_standardization(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import torch
+        from botorch.models import SingleTaskGP
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_continuous_spec(input_dim=2)
+        spec.execution = ExecutionSpec(outcome_standardization=False)
+        train_X = torch.zeros(5, 2, dtype=torch.double)
+        train_Y = torch.zeros(5, 1, dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model, SingleTaskGP)
+        assert not hasattr(model, "outcome_transform")
+
     def test_invalid_model_class_raises(self) -> None:
         try:
             import torch
@@ -743,6 +760,20 @@ class TestDataPrepare:
         bundle = prepare_data(df, input_columns=["x1"], output_columns=["y"])
 
         assert bundle.train_X[:, 0].tolist() == [0.0, 0.0, 0.0]
+
+    def test_prepare_data_can_preserve_raw_inputs_when_scaling_disabled(self) -> None:
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas not installed")
+
+        from gparchitect.builders.data import prepare_data
+
+        df = pd.DataFrame({"x1": [2.0, 3.0, 5.0], "y": [0.1, 0.2, 0.3]})
+        bundle = prepare_data(df, input_columns=["x1"], output_columns=["y"], scale_inputs=False)
+
+        assert bundle.input_scaling_applied is False
+        assert bundle.train_X[:, 0].tolist() == [2.0, 3.0, 5.0]
 
     def test_prepare_data_missing_column_raises(self) -> None:
         try:

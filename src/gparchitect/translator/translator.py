@@ -38,6 +38,7 @@ import re
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -46,6 +47,8 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
+    PriorSpec,
     SpectralMixtureInitialization,
 )
 
@@ -122,6 +125,12 @@ _MEAN_PATTERN = re.compile(
     r"(constant|zero|linear)\s+mean\b(?:\s+for\s+(output|task)\s+(\d+))?",
     re.IGNORECASE,
 )
+_PRIOR_PATTERN = re.compile(
+    r"\b(?P<distribution>normal|lognormal|gamma|halfcauchy|uniform)\s+prior\s+on\s+"
+    r"(?P<target>lengthscale|outputscale|period|noise)\b(?P<params>.*?)(?="
+    r"\b(?:normal|lognormal|gamma|halfcauchy|uniform)\s+prior\s+on\b|$)",
+    re.IGNORECASE,
+)
 
 _ARD_SUPPORTED_KERNELS = {
     KernelType.RBF,
@@ -130,6 +139,37 @@ _ARD_SUPPORTED_KERNELS = {
     KernelType.MATERN_32,
     KernelType.MATERN_52,
     KernelType.PERIODIC,
+}
+_PRIOR_DISTRIBUTION_MAP = {
+    "normal": PriorDistribution.NORMAL,
+    "lognormal": PriorDistribution.LOG_NORMAL,
+    "gamma": PriorDistribution.GAMMA,
+    "halfcauchy": PriorDistribution.HALF_CAUCHY,
+    "uniform": PriorDistribution.UNIFORM,
+}
+_PRIOR_PARAM_PATTERNS: dict[PriorDistribution, dict[str, re.Pattern[str]]] = {
+    PriorDistribution.NORMAL: {
+        "loc": re.compile(r"\bloc\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "scale": re.compile(r"\bscale\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.LOG_NORMAL: {
+        "loc": re.compile(r"\bloc\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "scale": re.compile(r"\bscale\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.GAMMA: {
+        "concentration": re.compile(
+            r"\bconcentration\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
+            re.IGNORECASE,
+        ),
+        "rate": re.compile(r"\brate\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.HALF_CAUCHY: {
+        "scale": re.compile(r"\bscale\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.UNIFORM: {
+        "a": re.compile(r"\ba\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "b": re.compile(r"\bb\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
 }
 
 
@@ -265,6 +305,43 @@ def _detect_noise(instruction: str) -> NoiseSpec:
     if _FIXED_NOISE_PATTERN.search(instruction):
         return NoiseSpec(fixed=True, noise_value=1e-4)
     return NoiseSpec(fixed=False)
+
+
+def _parse_prior_params(distribution: PriorDistribution, params_text: str) -> dict[str, float]:
+    """Extract prior parameters from the trailing text of a prior phrase."""
+    extracted: dict[str, float] = {}
+    for param_name, pattern in _PRIOR_PARAM_PATTERNS[distribution].items():
+        match = pattern.search(params_text)
+        if match is not None:
+            extracted[param_name] = float(match.group(1))
+    return extracted
+
+
+def _apply_detected_priors(instruction: str, kernel_spec: KernelSpec, noise: NoiseSpec) -> None:
+    """Apply parsed prior phrases to a kernel or noise spec in place."""
+    for match in _PRIOR_PATTERN.finditer(instruction):
+        distribution = _PRIOR_DISTRIBUTION_MAP[match.group("distribution").lower()]
+        prior = PriorSpec(
+            distribution=distribution,
+            params=_parse_prior_params(distribution, match.group("params")),
+        )
+        target = match.group("target").lower()
+        if target == "lengthscale":
+            kernel_spec.lengthscale_prior = prior
+        elif target == "outputscale":
+            kernel_spec.outputscale_prior = prior
+        elif target == "period":
+            kernel_spec.period_prior = prior
+        elif target == "noise":
+            noise.prior = prior
+
+
+def _default_execution_spec(model_class: ModelClass) -> ExecutionSpec:
+    """Return the default execution semantics for a translated spec."""
+    return ExecutionSpec(
+        input_scaling=True,
+        outcome_standardization=model_class != ModelClass.MULTI_TASK_GP,
+    )
 
 
 def _parse_mean_type(mean_name: str) -> MeanFunctionType:
@@ -421,6 +498,7 @@ def translate_to_dsl(
     input_dim: int,
     output_dim: int = 1,
     task_feature_index: int | None = None,
+    task_values: list[int] | None = None,
     input_feature_names: list[str] | None = None,
 ) -> GPSpec:
     """Translate a natural-language GP instruction into a GPSpec DSL object.
@@ -432,6 +510,7 @@ def translate_to_dsl(
         input_dim: Total number of continuous input features.
         output_dim: Number of model outputs (default 1).
         task_feature_index: Column index of the task indicator for MultiTaskGP.
+        task_values: Optional explicit task domain for MultiTaskGP.
         input_feature_names: Optional continuous feature names used for column-aware parsing.
 
     Returns:
@@ -448,15 +527,18 @@ def translate_to_dsl(
     noise = _detect_noise(instruction)
     use_ard = _resolve_ard_setting(instruction, kernel_type)
     default_kernel_spec = _build_kernel_spec(instruction, kernel_type)
+    _apply_detected_priors(instruction, default_kernel_spec, noise)
     feature_groups = _extract_feature_groups(instruction, input_feature_names)
     mean, output_means = _detect_means(instruction, model_class, output_dim)
 
-    task_values: list[int] | None = None
+    resolved_task_values = task_values
 
     if feature_groups:
         composition = explicit_composition
         if composition is None:
             composition = CompositionType.HIERARCHICAL if len(feature_groups) > 1 else CompositionType.ADDITIVE
+        for group in feature_groups:
+            _apply_detected_priors(instruction, group.kernel, noise)
 
     elif model_class == ModelClass.MODEL_LIST_GP:
         composition = explicit_composition or CompositionType.ADDITIVE
@@ -482,8 +564,8 @@ def translate_to_dsl(
     multitask_rank: int | None = None
     if model_class == ModelClass.MULTI_TASK_GP:
         multitask_rank = min(output_dim, 2)
-        if output_means:
-            task_values = sorted(output_means)
+        if resolved_task_values is None and output_means:
+            resolved_task_values = sorted(output_means)
 
     description = (
         f"Translated from: '{instruction[:80]}{'...' if len(instruction) > 80 else ''}' | "
@@ -496,10 +578,11 @@ def translate_to_dsl(
         mean=mean,
         output_means=output_means,
         noise=noise,
+        execution=_default_execution_spec(model_class),
         input_dim=input_dim,
         output_dim=output_dim,
         task_feature_index=task_feature_index,
-        task_values=task_values,
+        task_values=resolved_task_values,
         multitask_rank=multitask_rank,
         group_composition=composition,
         description=description,

@@ -52,6 +52,34 @@ class TestRunGPArchitectMocked:
 
     @patch("gparchitect.api.fit_and_validate")
     @patch("gparchitect.api.build_model_from_dsl")
+    def test_multitask_run_passes_explicit_task_values_into_spec(self, mock_build, mock_fit) -> None:
+        self._skip_if_no_pandas_torch()
+        import pandas as pd
+
+        from gparchitect.api import run_gparchitect
+
+        df = pd.DataFrame(
+            {"x1": [1.0, 2.0, 1.0, 2.0], "x2": [4.0, 5.0, 4.0, 5.0], "task": [0, 0, 1, 1], "y": [0.1, 0.2, 0.3, 0.4]}
+        )
+        mock_model = MagicMock()
+        mock_build.return_value = mock_model
+        mock_fit.return_value = FitResult(success=True, model=mock_model, mll_value=-1.0)
+
+        run_gparchitect(
+            dataframe=df,
+            instruction="Use a multi-task gp with zero mean for task 0 and constant mean for task 1.",
+            input_columns=["x1", "x2"],
+            output_columns=["y"],
+            task_column="task",
+        )
+
+        built_spec = mock_build.call_args.args[0]
+        assert built_spec.task_values == [0, 1]
+        assert built_spec.execution.input_scaling is True
+        assert built_spec.execution.outcome_standardization is False
+
+    @patch("gparchitect.api.fit_and_validate")
+    @patch("gparchitect.api.build_model_from_dsl")
     def test_failed_run_returns_none_and_log(self, mock_build, mock_fit) -> None:
         self._skip_if_no_pandas_torch()
         import pandas as pd

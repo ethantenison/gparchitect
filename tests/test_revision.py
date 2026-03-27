@@ -157,6 +157,13 @@ class TestReviseSwitchToSingleTask:
         assert result is not None
         assert result.revised_spec.task_values is None
 
+    def test_downgrade_reenables_single_task_outcome_standardization(self) -> None:
+        spec = _make_spec()
+        spec.execution.outcome_standardization = False
+        result = revise_dsl(spec, "error", attempt=3)
+        assert result is not None
+        assert result.revised_spec.execution.outcome_standardization is True
+
     def test_clears_multitask_rank(self) -> None:
         spec = _make_spec()
         result = revise_dsl(spec, "error", attempt=3)

@@ -13,7 +13,7 @@ Inputs:
 
 Outputs:
     Pydantic model classes: GPSpec, KernelSpec, FeatureGroupSpec, PriorSpec, NoiseSpec,
-    MeanSpec.
+    MeanSpec, ExecutionSpec.
 
 Non-obvious design decisions:
     - All fields use native Python typing (list, dict, X | None) per project style.
@@ -103,6 +103,18 @@ class PriorSpec(BaseModel):
 
     distribution: PriorDistribution
     params: dict[str, float] = Field(default_factory=dict)
+
+
+class ExecutionSpec(BaseModel):
+    """Execution semantics that affect how a validated DSL is run.
+
+    Attributes:
+        input_scaling: Whether continuous inputs are min-max scaled before model building.
+        outcome_standardization: Whether BoTorch outcome transforms standardize outputs where supported.
+    """
+
+    input_scaling: bool = True
+    outcome_standardization: bool = True
 
 
 class NoiseSpec(BaseModel):
@@ -195,6 +207,7 @@ class GPSpec(BaseModel):
         mean: Optional shared mean-function specification.
         output_means: Optional per-output or per-task mean overrides.
         noise: Noise model specification.
+        execution: Execution semantics that affect preprocessing and model transforms.
         input_dim: Total number of input features.
         output_dim: Number of output dimensions.
         task_feature_index: Column index of the task indicator (MultiTaskGP only).
@@ -209,6 +222,7 @@ class GPSpec(BaseModel):
     mean: MeanSpec | None = None
     output_means: dict[int, MeanSpec] = Field(default_factory=dict)
     noise: NoiseSpec = Field(default_factory=NoiseSpec)
+    execution: ExecutionSpec = Field(default_factory=ExecutionSpec)
     input_dim: int = 1
     output_dim: int = 1
     task_feature_index: int | None = None

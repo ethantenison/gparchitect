@@ -7,6 +7,7 @@ from pydantic import ValidationError
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -142,6 +143,24 @@ class TestValidateModelClass:
         assert not result.is_valid
         assert any("task_feature_index" in e for e in result.errors)
 
+    def test_multitask_requires_task_values(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="all",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("task_values" in e for e in result.errors)
+
     def test_multitask_requires_long_format_output_dim(self) -> None:
         spec = GPSpec(
             model_class=ModelClass.MULTI_TASK_GP,
@@ -174,6 +193,7 @@ class TestValidateModelClass:
             input_dim=2,
             output_dim=1,
             task_feature_index=1,
+            task_values=[0, 1],
             multitask_rank=0,
         )
         result = validate_dsl(spec)
@@ -238,6 +258,28 @@ class TestValidateNoise:
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("noise.prior" in error for error in result.errors)
+
+
+class TestValidateExecution:
+    def test_multitask_rejects_outcome_standardization(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="features",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+            task_values=[0, 1],
+            execution=ExecutionSpec(outcome_standardization=True),
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("outcome_standardization" in error for error in result.errors)
 
 
 class TestValidateMeans:
