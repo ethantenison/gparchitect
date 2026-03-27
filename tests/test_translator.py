@@ -7,6 +7,7 @@ import pytest
 from gparchitect.dsl.schema import (
     CompositionType,
     KernelType,
+    MeanFunctionType,
     ModelClass,
 )
 from gparchitect.translator.translator import translate_to_dsl
@@ -131,6 +132,47 @@ class TestTranslateNoise:
     def test_noiseless_keyword(self) -> None:
         spec = translate_to_dsl("Noiseless GP", input_dim=2)
         assert spec.noise.fixed is True
+
+
+class TestTranslateMeans:
+    def test_default_mean_is_unset(self) -> None:
+        spec = translate_to_dsl("GP model", input_dim=2)
+        assert spec.mean is None
+        assert spec.output_means == {}
+
+    def test_constant_mean_keyword(self) -> None:
+        spec = translate_to_dsl("Use a constant mean with an RBF kernel", input_dim=2)
+        assert spec.mean is not None
+        assert spec.mean.mean_type == MeanFunctionType.CONSTANT
+
+    def test_zero_mean_keyword(self) -> None:
+        spec = translate_to_dsl("Use a zero mean", input_dim=2)
+        assert spec.mean is not None
+        assert spec.mean.mean_type == MeanFunctionType.ZERO
+
+    def test_linear_mean_keyword(self) -> None:
+        spec = translate_to_dsl("Use a linear mean", input_dim=3)
+        assert spec.mean is not None
+        assert spec.mean.mean_type == MeanFunctionType.LINEAR
+
+    def test_model_list_output_mean_keyword(self) -> None:
+        spec = translate_to_dsl(
+            "Use a ModelListGP where output 1 uses zero mean and output 2 uses linear mean",
+            input_dim=2,
+            output_dim=2,
+        )
+        assert spec.output_means[0].mean_type == MeanFunctionType.ZERO
+        assert spec.output_means[1].mean_type == MeanFunctionType.LINEAR
+
+    def test_multitask_task_mean_keyword(self) -> None:
+        spec = translate_to_dsl(
+            "Use a multitask GP with zero mean for task 0 and constant mean for task 1",
+            input_dim=3,
+            output_dim=1,
+            task_feature_index=2,
+        )
+        assert spec.output_means[0].mean_type == MeanFunctionType.ZERO
+        assert spec.output_means[1].mean_type == MeanFunctionType.CONSTANT
 
 
 class TestTranslateComposition:

@@ -42,6 +42,8 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelSpec,
     KernelType,
+    MeanFunctionType,
+    MeanSpec,
     ModelClass,
     NoiseSpec,
     SpectralMixtureInitialization,
@@ -115,6 +117,11 @@ _DEPTH_PATTERN = re.compile(
     re.IGNORECASE,
 )
 _POWER_PATTERN = re.compile(r"\bpower\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE)
+_MEAN_PATTERN = re.compile(
+    r"\b(?:(output|task)\s+(\d+)\s+(?:uses?\s+(?:(?:a|an)\s+)?)?)?"
+    r"(constant|zero|linear)\s+mean\b(?:\s+for\s+(output|task)\s+(\d+))?",
+    re.IGNORECASE,
+)
 
 _ARD_SUPPORTED_KERNELS = {
     KernelType.RBF,
@@ -260,6 +267,73 @@ def _detect_noise(instruction: str) -> NoiseSpec:
     return NoiseSpec(fixed=False)
 
 
+def _parse_mean_type(mean_name: str) -> MeanFunctionType:
+    """Map a parsed natural-language mean name to a DSL mean enum."""
+    normalized_name = mean_name.lower()
+    if normalized_name == "constant":
+        return MeanFunctionType.CONSTANT
+    if normalized_name == "zero":
+        return MeanFunctionType.ZERO
+    return MeanFunctionType.LINEAR
+
+
+def _normalize_mean_target(
+    target_kind: str,
+    target_index: int,
+    model_class: ModelClass,
+    output_dim: int,
+) -> int | None:
+    """Normalize a parsed output/task target into a spec output_means key."""
+    if target_kind == "task":
+        if model_class != ModelClass.MULTI_TASK_GP or target_index < 0:
+            return None
+        return target_index
+
+    if target_index < 1 or target_index > output_dim:
+        return None
+
+    if model_class == ModelClass.MULTI_TASK_GP:
+        return target_index - 1
+    if model_class == ModelClass.MODEL_LIST_GP:
+        return target_index - 1
+    return None
+
+
+def _detect_means(
+    instruction: str,
+    model_class: ModelClass,
+    output_dim: int,
+) -> tuple[MeanSpec | None, dict[int, MeanSpec]]:
+    """Detect shared and targeted mean-function requests from an instruction."""
+    mean: MeanSpec | None = None
+    output_means: dict[int, MeanSpec] = {}
+
+    for match in _MEAN_PATTERN.finditer(instruction):
+        prefix_kind = match.group(1)
+        prefix_index = match.group(2)
+        mean_type = MeanSpec(mean_type=_parse_mean_type(match.group(3)))
+        suffix_kind = match.group(4)
+        suffix_index = match.group(5)
+
+        target_kind = prefix_kind or suffix_kind
+        target_index_text = prefix_index or suffix_index
+        if target_kind is None or target_index_text is None:
+            if mean is None:
+                mean = mean_type
+            continue
+
+        target_key = _normalize_mean_target(
+            target_kind=target_kind.lower(),
+            target_index=int(target_index_text),
+            model_class=model_class,
+            output_dim=output_dim,
+        )
+        if target_key is not None:
+            output_means[target_key] = mean_type
+
+    return mean, output_means
+
+
 def _resolve_ard_setting(instruction: str, kernel_type: KernelType) -> bool:
     """Return whether ARD should be enabled for a kernel type."""
     if kernel_type == KernelType.SPECTRAL_MIXTURE:
@@ -375,6 +449,7 @@ def translate_to_dsl(
     use_ard = _resolve_ard_setting(instruction, kernel_type)
     default_kernel_spec = _build_kernel_spec(instruction, kernel_type)
     feature_groups = _extract_feature_groups(instruction, input_feature_names)
+    mean, output_means = _detect_means(instruction, model_class, output_dim)
 
     if feature_groups:
         composition = explicit_composition
@@ -416,6 +491,8 @@ def translate_to_dsl(
     spec = GPSpec(
         model_class=model_class,
         feature_groups=feature_groups,
+        mean=mean,
+        output_means=output_means,
         noise=noise,
         input_dim=input_dim,
         output_dim=output_dim,

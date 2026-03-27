@@ -2,24 +2,24 @@
 name = "gparchitect"
 version = "0.1.0"
 description = "Build Gaussian Process models from natural-language instructions via a formal DSL using BoTorch and GPyTorch."
-authors = ["GPArchitect Contributors"]
+authors = ["ethantenison <tenison.ethan@gmail.com>"]
 license = "MIT"
 readme = "README.md"
 packages = [{ include = "gparchitect", from = "src" }]
 
 [tool.poetry.dependencies]
 python = "3.13.12"
-pydantic = "^2.0"
-torch = "^2.0"
-botorch = "^0.11"
-gpytorch = "^1.11"
-pandas = "^2.0"
+pydantic = "2.12.5"
+torch = "2.11.0"
+botorch = "0.17.2"
+gpytorch = "1.15.2"
+pandas = "^2.2.2"
 click = "^8.1"
 
 [tool.poetry.group.dev.dependencies]
-pytest = "^8.0"
-pytest-cov = "^5.0"
-ruff = "^0.4"
+pytest = "9.0.2"
+pytest-cov = "7.0.0"
+ruff = "0.15.4"
 ipykernel = "^7.2.0"
 
 [tool.poetry.scripts]

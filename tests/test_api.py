@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from gparchitect.fitting.fitter import FitResult
+
 
 class TestRunGPArchitectMocked:
     """Integration-style tests for run_gparchitect using mocked fitting."""
@@ -104,6 +106,40 @@ class TestRunGPArchitectMocked:
         assert model is mock_model
         assert log.final_success is True
         assert len(log.attempts) >= 2
+
+    @patch("gparchitect.api.fit_and_validate")
+    @patch("gparchitect.api.build_model_from_dsl")
+    def test_mean_related_build_failure_falls_back_to_default_mean(self, mock_build, mock_fit) -> None:
+        self._skip_if_no_pandas_torch()
+        import pandas as pd
+
+        from gparchitect.api import run_gparchitect
+        from gparchitect.fitting.fitter import FitResult
+
+        df = pd.DataFrame({"x1": [1.0, 2.0, 3.0], "x2": [4.0, 5.0, 6.0], "y": [0.1, 0.2, 0.3]})
+        mock_model = MagicMock()
+
+        def build_side_effect(spec, train_X, train_Y):  # noqa: ANN001, ARG001
+            if spec.mean is not None or spec.output_means:
+                raise RuntimeError("mean_module shape mismatch")
+            return mock_model
+
+        mock_build.side_effect = build_side_effect
+        mock_fit.return_value = FitResult(success=True, model=mock_model, mll_value=-0.5)
+
+        model, log = run_gparchitect(
+            dataframe=df,
+            instruction="Use a linear mean with Matern52",
+            input_columns=["x1", "x2"],
+            output_columns=["y"],
+            max_retries=2,
+        )
+
+        assert model is mock_model
+        assert log.final_success is True
+        assert len(log.attempts) == 2
+        assert log.attempts[0].revision_strategy == "simplify_mean_to_default"
+        assert "default mean behavior" in (log.attempts[0].revision_rationale or "")
 
     def test_run_with_missing_columns_raises(self) -> None:
         self._skip_if_no_pandas_torch()

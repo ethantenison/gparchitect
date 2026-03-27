@@ -12,6 +12,8 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelSpec,
     KernelType,
+    MeanFunctionType,
+    MeanSpec,
     ModelClass,
     NoiseSpec,
     PriorSpec,
@@ -51,6 +53,13 @@ class TestNoiseSpec:
         data = json.loads(noise.model_dump_json())
         assert data["fixed"] is True
         assert data["noise_value"] == pytest.approx(0.01)
+
+
+class TestMeanSpec:
+    def test_mean_spec_serializes(self) -> None:
+        mean = MeanSpec(mean_type=MeanFunctionType.LINEAR)
+        data = json.loads(mean.model_dump_json())
+        assert data["mean_type"] == "Linear"
 
 
 class TestKernelSpec:
@@ -146,6 +155,8 @@ class TestGPSpec:
         assert spec.input_dim == 1
         assert spec.output_dim == 1
         assert spec.feature_groups == []
+        assert spec.mean is None
+        assert spec.output_means == {}
         assert spec.task_feature_index is None
         assert spec.multitask_rank is None
 
@@ -179,13 +190,25 @@ class TestGPSpec:
                     kernel=KernelSpec(kernel_type=KernelType.MATERN_52, ard=True),
                 )
             ],
+            mean=MeanSpec(mean_type=MeanFunctionType.ZERO),
             input_dim=3,
             output_dim=1,
         )
         data = json.loads(spec.model_dump_json())
         assert data["model_class"] == "SingleTaskGP"
         assert data["input_dim"] == 3
+        assert data["mean"]["mean_type"] == "Zero"
         assert data["feature_groups"][0]["kernel"]["ard"] is True
+
+    def test_output_means_serialize(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MODEL_LIST_GP,
+            output_dim=2,
+            output_means={0: MeanSpec(mean_type=MeanFunctionType.CONSTANT), 1: MeanSpec(mean_type=MeanFunctionType.LINEAR)},
+        )
+        data = json.loads(spec.model_dump_json())
+        assert data["output_means"]["0"]["mean_type"] == "Constant"
+        assert data["output_means"]["1"]["mean_type"] == "Linear"
 
     def test_description_field(self) -> None:
         spec = GPSpec(description="Test spec")

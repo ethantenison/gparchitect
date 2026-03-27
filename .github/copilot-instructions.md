@@ -123,19 +123,116 @@ Avoid:
 
 Max line length: 120 characters.
 
+### Pylance Quality Gate (STRICT)
+
+- Generated/modified Python code must be **Pylance-clean** in edited files.
+- After edits, validate diagnostics in touched files before finalizing.
+- Prefer fixing root typing issues (narrowing, casts, typed helpers) over suppressions.
+- Avoid blanket `# type: ignore` usage; if unavoidable, use the narrowest code and explain why.
+
 ---
 
 ## Testing Expectations
 
-Add tests for:
+Add tests for core pipeline invariants:
 
 - Natural language → DSL translation
-- DSL validation
+- DSL validation (valid and invalid cases)
 - Model construction from DSL
 - Failure recovery via DSL revision
 - Fallback-to-default behavior
 
-Use small synthetic datasets.
+Use small, deterministic synthetic datasets only.
+
+---
+
+### Test Design Principles
+
+Write pytest tests that are minimal, high-value, and easy to maintain.
+
+- Test **behavior and invariants**, not implementation details
+- Prefer the **lowest effective level**:
+  - Unit tests for DSL logic, validation, and transformations
+  - Integration tests only for model construction and fitting boundaries
+- Do not duplicate coverage across unit, integration, and end-to-end tests
+- One test = **one behavior or one failure mode**
+- Before adding a test, ask: *what unique regression does this catch?*
+
+---
+
+### Controlling Test Explosion
+
+- Prefer **representative cases** over exhaustive combinations
+- Do not generate combinatorial test grids over:
+  - kernels
+  - priors
+  - ARD configurations
+  - multitask settings
+- Use parametrization only for **small, meaningful matrices**
+- Avoid testing all DSL permutations; test **canonical patterns and edge cases**
+
+---
+
+### Fixtures and Test Data
+
+- Use **small, explicit fixtures** only for shared setup
+- Prefer **factories/builders** for DSL objects and datasets
+- Avoid large or implicit fixture chains (“fixture soup”)
+- Keep all test data:
+  - minimal
+  - readable
+  - deterministic
+
+---
+
+### Mocks, Fakes, and Boundaries
+
+- Prefer **fakes** for repositories and internal services
+- Use mocks only to verify **external interaction contracts**
+- Do not mock core DSL or model-building logic
+
+---
+
+### Unit Test Constraints
+
+Unit tests must:
+
+- Run fast (no heavy GP fitting loops unless trivial)
+- Be deterministic (no randomness without fixed seeds)
+- Avoid:
+  - real training loops when unnecessary
+  - large datasets
+  - external I/O
+
+---
+
+### Integration Test Scope
+
+Integration tests should only verify:
+
+- DSL → model construction correctness
+- Compatibility with BoTorch/GPyTorch APIs
+- Successful fitting on small datasets
+
+Keep integration tests **few and targeted**.
+
+---
+
+### Regression Discipline
+
+- Every real bug must include a **regression test**
+- Do not add redundant tests for already-covered behavior
+- Prefer adding tests at the **lowest level that would have caught the bug**
+
+---
+
+### Anti-Patterns (Must Avoid)
+
+- Testing internal/private methods directly
+- Snapshotting large DSL or model objects
+- Asserting on call order or internal helper usage
+- Duplicating the same test across multiple layers
+- Large parameter sweeps disguised as tests
 
 ---
 
