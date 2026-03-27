@@ -158,6 +158,7 @@ class TestGPSpec:
         assert spec.mean is None
         assert spec.output_means == {}
         assert spec.task_feature_index is None
+        assert spec.task_values is None
         assert spec.multitask_rank is None
 
     def test_full_spec(self) -> None:
@@ -172,12 +173,14 @@ class TestGPSpec:
             ],
             noise=NoiseSpec(fixed=False),
             input_dim=3,
-            output_dim=2,
+            output_dim=1,
             task_feature_index=2,
+            task_values=[0, 1],
             multitask_rank=1,
         )
         assert spec.model_class == ModelClass.MULTI_TASK_GP
         assert spec.task_feature_index == 2
+        assert spec.task_values == [0, 1]
         assert len(spec.feature_groups) == 1
 
     def test_json_round_trip(self) -> None:
@@ -209,6 +212,16 @@ class TestGPSpec:
         data = json.loads(spec.model_dump_json())
         assert data["output_means"]["0"]["mean_type"] == "Constant"
         assert data["output_means"]["1"]["mean_type"] == "Linear"
+
+    def test_task_values_serialize(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            output_dim=1,
+            task_feature_index=2,
+            task_values=[0, 1],
+        )
+        data = json.loads(spec.model_dump_json())
+        assert data["task_values"] == [0, 1]
 
     def test_description_field(self) -> None:
         spec = GPSpec(description="Test spec")

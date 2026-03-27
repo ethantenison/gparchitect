@@ -211,18 +211,20 @@ def _remove_priors(spec: GPSpec, error_message: str) -> str:
         for child in group.kernel.children:
             child.lengthscale_prior = None
             child.outputscale_prior = None
+            child.period_prior = None
     spec.noise.prior = None
     return f"Removed all priors from kernels and noise. Error was: {error_message[:120]}"
 
 
 def _switch_to_single_task(spec: GPSpec, error_message: str) -> str:
     """Switch model class to SingleTaskGP with safe defaults."""
+    continuous_indices = sorted({idx for group in spec.feature_groups for idx in group.feature_indices})
+
     spec.model_class = ModelClass.SINGLE_TASK_GP
     spec.task_feature_index = None
+    spec.task_values = None
     spec.multitask_rank = None
     spec.output_dim = 1
-
-    continuous_indices = list(range(spec.input_dim))
     spec.feature_groups = [
         FeatureGroupSpec(
             name="all_features",

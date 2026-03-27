@@ -451,22 +451,22 @@ def translate_to_dsl(
     feature_groups = _extract_feature_groups(instruction, input_feature_names)
     mean, output_means = _detect_means(instruction, model_class, output_dim)
 
+    task_values: list[int] | None = None
+
     if feature_groups:
         composition = explicit_composition
         if composition is None:
             composition = CompositionType.HIERARCHICAL if len(feature_groups) > 1 else CompositionType.ADDITIVE
 
-    # For ModelListGP, create one feature group per output when no column-specific mapping is provided.
     elif model_class == ModelClass.MODEL_LIST_GP:
         composition = explicit_composition or CompositionType.ADDITIVE
         continuous_indices = [idx for idx in range(input_dim) if idx != task_feature_index]
         feature_groups = [
             FeatureGroupSpec(
-                name=f"output_{output_idx}_features",
+                name="all_features",
                 feature_indices=continuous_indices,
                 kernel=default_kernel_spec.model_copy(deep=True),
             )
-            for output_idx in range(output_dim)
         ]
     else:
         composition = explicit_composition or CompositionType.ADDITIVE
@@ -482,6 +482,8 @@ def translate_to_dsl(
     multitask_rank: int | None = None
     if model_class == ModelClass.MULTI_TASK_GP:
         multitask_rank = min(output_dim, 2)
+        if output_means:
+            task_values = sorted(output_means)
 
     description = (
         f"Translated from: '{instruction[:80]}{'...' if len(instruction) > 80 else ''}' | "
@@ -497,6 +499,7 @@ def translate_to_dsl(
         input_dim=input_dim,
         output_dim=output_dim,
         task_feature_index=task_feature_index,
+        task_values=task_values,
         multitask_rank=multitask_rank,
         group_composition=composition,
         description=description,

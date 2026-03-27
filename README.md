@@ -18,6 +18,10 @@ power and offset values.
 Mean functions can be selected with natural-language phrases such as `constant mean`,
 `zero mean`, or `linear mean`. If no mean function is specified, GPArchitect defers to
 the default mean used by the underlying BoTorch model.
+For `MultiTaskGP`, GPArchitect currently supports long-format data with one observed
+output column plus a task indicator column. When targeted multitask mean overrides are
+parsed from natural language, the translated DSL records the explicit task values that
+those overrides apply to.
 
 ## Architecture
 
@@ -80,6 +84,9 @@ Mean functions accept `constant mean`, `zero mean`, or `linear mean`. For indepe
 ModelListGP specifications you can target individual outputs with phrases such as `output 1 uses
 zero mean` and `output 2 uses linear mean`. For MultiTaskGP you can target individual task values
 with phrases such as `zero mean for task 0` and `constant mean for task 1`.
+When a `ModelListGP` instruction does not specify output-specific feature ownership,
+GPArchitect falls back to one shared feature-group specification that is reused across
+the independent output models rather than fabricating separate per-output covariance specs.
 
 ## CLI
 

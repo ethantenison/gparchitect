@@ -109,6 +109,13 @@ Kernel construction follows these builder-side rules:
 - `NoiseSpec` — noise model specification
 - `PriorSpec` — hyperparameter prior specification
 
+For the current validated contract:
+
+- `MultiTaskGP` uses long-format data with one observed output column and a task indicator.
+- Targeted multitask overrides require an explicit task domain in `GPSpec.task_values`.
+- Supported priors are a validated subset that the builder applies directly; unsupported
+  prior placements must be rejected during validation.
+
 **Boundary rule**: This module has NO dependencies on other gparchitect modules.
 It must remain import-free from the rest of the codebase.
 
@@ -141,6 +148,13 @@ at planning artifacts rather than producing a model or GP DSL directly.
 
 **Key functions**:
 - `translate_to_dsl(instruction, input_dim, output_dim, task_feature_index) → GPSpec`
+
+Translation rules that matter for contract alignment:
+
+- `ModelListGP` without output-specific grouping falls back to one shared all-input
+  feature-group specification reused across output models.
+- When targeted multitask means are parsed from natural language, translation records
+  the explicit task values in `GPSpec.task_values`.
 
 **Boundary rule**: The translator must NEVER import from `builders`, `fitting`,
 `revision`, or `logging`. It may only import from `dsl`.
@@ -176,6 +190,7 @@ Builder responsibilities include:
 - Converting `MeanSpec` into GPyTorch mean modules
 - Applying optional per-output means for `ModelListGP`
 - Applying optional per-task means for `MultiTaskGP`
+- Applying the supported validated subset of DSL priors to kernels and learnable noise
 - Selecting the likelihood implementation from the DSL noise spec and model class
 
 **Boundary rule**: Builders import `dsl` and `torch`/`botorch`/`gpytorch`.

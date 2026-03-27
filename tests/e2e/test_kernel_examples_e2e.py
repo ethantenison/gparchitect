@@ -326,6 +326,7 @@ def test_multitask_kernel_example_runs_end_to_end() -> None:
 
     spec_snapshot = log.attempts[0].spec_snapshot
     assert spec_snapshot["model_class"] == "MultiTaskGP"
+    assert spec_snapshot["task_values"] == [0, 1]
     assert spec_snapshot["output_means"]["0"]["mean_type"] == "Zero"
     assert spec_snapshot["output_means"]["1"]["mean_type"] == "Constant"
 

@@ -186,8 +186,9 @@ class GPSpec(BaseModel):
         output_means: Optional per-output or per-task mean overrides.
         noise: Noise model specification.
         input_dim: Total number of input features.
-        output_dim: Number of output dimensions (1 for single-task).
+        output_dim: Number of output dimensions.
         task_feature_index: Column index of the task indicator (MultiTaskGP only).
+        task_values: Optional explicit task domain for MultiTaskGP targeted overrides.
         multitask_rank: Rank of the inter-task covariance (MultiTaskGP only).
         group_composition: How feature-group kernels are combined.
         description: Optional human-readable summary of the specification.
@@ -201,6 +202,7 @@ class GPSpec(BaseModel):
     input_dim: int = 1
     output_dim: int = 1
     task_feature_index: int | None = None
+    task_values: list[int] | None = None
     multitask_rank: int | None = None
     group_composition: CompositionType = CompositionType.ADDITIVE
     description: str = ""

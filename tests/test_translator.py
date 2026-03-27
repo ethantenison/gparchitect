@@ -173,6 +173,7 @@ class TestTranslateMeans:
         )
         assert spec.output_means[0].mean_type == MeanFunctionType.ZERO
         assert spec.output_means[1].mean_type == MeanFunctionType.CONSTANT
+        assert spec.task_values == [0, 1]
 
 
 class TestTranslateComposition:
@@ -264,9 +265,10 @@ class TestTranslateStructure:
         for group in spec.feature_groups:
             assert 3 not in group.feature_indices
 
-    def test_model_list_creates_multiple_groups(self) -> None:
+    def test_model_list_uses_single_shared_group_when_no_feature_mapping_exists(self) -> None:
         spec = translate_to_dsl("ModelListGP", input_dim=3, output_dim=3)
-        assert len(spec.feature_groups) == 3
+        assert len(spec.feature_groups) == 1
+        assert spec.feature_groups[0].feature_indices == [0, 1, 2]
 
     def test_description_contains_instruction(self) -> None:
         spec = translate_to_dsl("Use Matern52 with ARD", input_dim=2)
