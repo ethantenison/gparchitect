@@ -20,6 +20,8 @@ Outputs:
 
 Non-obvious design decisions:
     - Uses botorch.fit.fit_gpytorch_mll (the standard BoTorch fitting utility).
+        - Chooses the marginal log-likelihood class from the model type so independent
+            ModelListGP outputs fit through SumMarginalLogLikelihood.
     - A brief forward pass with train_X is used as the prediction validation check.
     - Fitting errors are caught and returned in FitResult rather than re-raised,
       enabling the revision/recovery loop to handle them gracefully.
@@ -82,9 +84,13 @@ def fit_and_validate(
     """
     try:
         import gpytorch
+        from botorch.models.model_list_gp_regression import ModelListGP
         from botorch.fit import fit_gpytorch_mll
 
-        mll = gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model)
+        if isinstance(model, ModelListGP):
+            mll = gpytorch.mlls.SumMarginalLogLikelihood(model.likelihood, model)
+        else:
+            mll = gpytorch.mlls.ExactMarginalLogLikelihood(model.likelihood, model)
         fit_gpytorch_mll(mll)
 
         mll_value = _compute_mll(mll, train_X, train_Y)
@@ -124,11 +130,17 @@ def _compute_mll(mll, train_X: "torch.Tensor", train_Y: "torch.Tensor") -> float
         The MLL value as a float, or None if computation fails.
     """
     try:
+        from botorch.models.model_list_gp_regression import ModelListGP
         import torch
 
         mll.train()
-        output = mll.model(train_X)
-        loss = -mll(output, train_Y.squeeze(-1))
+        if isinstance(mll.model, ModelListGP):
+            output = mll.model(*[train_X for _ in mll.model.models])
+            targets = [submodel.train_targets for submodel in mll.model.models]
+            loss = -mll(output, targets)
+        else:
+            output = mll.model(train_X)
+            loss = -mll(output, train_Y.squeeze(-1))
         return float(loss.item())
     except Exception as exc:
         logger.debug("MLL computation failed: %s", exc)

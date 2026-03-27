@@ -550,7 +550,7 @@ class TestBuildModelMocked:
         train_Y = torch.tensor([[0.0], [1.0], [0.5], [1.5]], dtype=torch.double)
         model = build_model_from_dsl(spec, train_X, train_Y)
 
-        assert isinstance(model.mean_module, gpytorch.means.MultitaskMean)
+        assert hasattr(model.mean_module, "base_means")
         assert isinstance(model.mean_module.base_means[0], gpytorch.means.ZeroMean)
         assert isinstance(model.mean_module.base_means[1], gpytorch.means.ConstantMean)
         assert isinstance(model.likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood)

@@ -10,6 +10,8 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from gparchitect.fitting.fitter import FitResult
+
 
 class TestRunGPArchitectMocked:
     """Integration-style tests for run_gparchitect using mocked fitting."""

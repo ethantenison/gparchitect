@@ -137,6 +137,7 @@ Requires Python 3.13.12, BoTorch ≥ 0.11, GPyTorch ≥ 1.11, and pandas ≥ 2.0
 
 - [Quickstart](docs/quickstart.md)
 - [Architecture Module Map](docs/architecture_module_map.md)
+- [Testing Strategy](docs/testing_strategy.md)
 - [Copilot Instructions](.github/copilot-instructions.md)
 
 ## License

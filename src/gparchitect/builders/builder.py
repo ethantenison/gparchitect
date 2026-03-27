@@ -377,6 +377,32 @@ def _build_multitask_mean_module(
 ):  # noqa: ANN201
     """Build a mean module for MultiTaskGP, including optional per-task overrides."""
     import gpytorch
+    import torch
+
+    class _TaskIndexedMean(gpytorch.means.Mean):
+        """Dispatch per-task scalar means for the long-format MultiTaskGP input layout."""
+
+        def __init__(self, base_means, resolved_task_values: list[int], task_feature_index: int) -> None:  # noqa: ANN001
+            super().__init__()
+            self.base_means = torch.nn.ModuleList(base_means)
+            self.task_values = tuple(int(value) for value in resolved_task_values)
+            self.task_feature_index = task_feature_index
+
+        def forward(self, x):  # noqa: ANN001, ANN201
+            resolved_task_feature_index = self.task_feature_index
+            if resolved_task_feature_index < 0:
+                resolved_task_feature_index = x.shape[-1] + resolved_task_feature_index
+
+            continuous_parts = [x[..., :resolved_task_feature_index], x[..., resolved_task_feature_index + 1 :]]
+            continuous_x = torch.cat([part for part in continuous_parts if part.shape[-1] > 0], dim=-1)
+            task_column = x[..., resolved_task_feature_index].long()
+
+            mean_values = torch.zeros(x.shape[:-1], dtype=x.dtype, device=x.device)
+            for task_value, base_mean in zip(self.task_values, self.base_means):
+                task_mask = task_column == task_value
+                if bool(task_mask.any()):
+                    mean_values[task_mask] = base_mean(continuous_x[task_mask])
+            return mean_values
 
     if not spec.output_means and spec.mean is None:
         return None
@@ -391,7 +417,7 @@ def _build_multitask_mean_module(
             task_mean_spec = spec.mean or MeanSpec(mean_type=MeanFunctionType.CONSTANT)
         base_means.append(_build_mean_module_from_spec(task_mean_spec, num_non_task_features))
 
-    return gpytorch.means.MultitaskMean(base_means=base_means, num_tasks=len(task_values))
+    return _TaskIndexedMean(base_means=base_means, resolved_task_values=task_values, task_feature_index=-1)
 
 
 def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.Tensor"):  # noqa: ANN201

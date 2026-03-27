@@ -112,3 +112,94 @@ class TestFitAndValidateMocked:
         result = FitResult(success=True, model=MagicMock(), mll_value=None, train_X=train_X, train_Y=train_Y)
         assert result.train_X is train_X
         assert result.train_Y is train_Y
+
+    def test_model_list_gp_fit_succeeds(self) -> None:
+        self._skip_if_no_botorch()
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+        from gparchitect.dsl.schema import FeatureGroupSpec, GPSpec, KernelSpec, KernelType, ModelClass
+        from gparchitect.fitting.fitter import fit_and_validate
+
+        spec = GPSpec(
+            model_class=ModelClass.MODEL_LIST_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="all",
+                    feature_indices=[0, 1],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=2,
+        )
+        train_X = torch.tensor(
+            [[0.0, 0.0], [0.2, 0.1], [0.4, 0.3], [0.6, 0.5], [0.8, 0.7], [1.0, 0.9]],
+            dtype=torch.double,
+        )
+        train_Y = torch.tensor(
+            [[0.1, 0.4], [0.2, 0.45], [0.35, 0.55], [0.5, 0.65], [0.7, 0.8], [0.9, 0.95]],
+            dtype=torch.double,
+        )
+
+        model = build_model_from_dsl(spec, train_X, train_Y)
+        result = fit_and_validate(model, train_X, train_Y)
+
+        assert result.success is True
+
+    def test_multitask_gp_with_per_task_means_fit_succeeds(self) -> None:
+        self._skip_if_no_botorch()
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+        from gparchitect.dsl.schema import (
+            FeatureGroupSpec,
+            GPSpec,
+            KernelSpec,
+            KernelType,
+            MeanFunctionType,
+            MeanSpec,
+            ModelClass,
+        )
+        from gparchitect.fitting.fitter import fit_and_validate
+
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="all",
+                    feature_indices=[0, 1],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=3,
+            output_dim=1,
+            task_feature_index=2,
+            multitask_rank=1,
+            output_means={
+                0: MeanSpec(mean_type=MeanFunctionType.ZERO),
+                1: MeanSpec(mean_type=MeanFunctionType.CONSTANT),
+            },
+        )
+        train_X = torch.tensor(
+            [
+                [0.0, 0.0, 0.0],
+                [0.2, 0.1, 0.0],
+                [0.4, 0.3, 0.0],
+                [0.6, 0.5, 0.0],
+                [0.0, 0.0, 1.0],
+                [0.2, 0.1, 1.0],
+                [0.4, 0.3, 1.0],
+                [0.6, 0.5, 1.0],
+            ],
+            dtype=torch.double,
+        )
+        train_Y = torch.tensor(
+            [[0.05], [0.15], [0.3], [0.45], [0.35], [0.45], [0.6], [0.75]],
+            dtype=torch.double,
+        )
+
+        model = build_model_from_dsl(spec, train_X, train_Y)
+        result = fit_and_validate(model, train_X, train_Y)
+
+        assert result.success is True

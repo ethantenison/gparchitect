@@ -40,6 +40,8 @@ from gparchitect.revision.revision import RevisionResult, revise_dsl
 from gparchitect.translator.translator import translate_to_dsl
 from gparchitect.validation.validator import ValidationResult, validate_dsl
 
+import pandas as pd
+
 logger = logging.getLogger(__name__)
 
 __all__ = [
@@ -55,7 +57,7 @@ __all__ = [
 
 
 def run_gparchitect(
-    dataframe,  # noqa: ANN001
+    dataframe: pd.DataFrame,
     instruction: str,
     input_columns: list[str],
     output_columns: list[str],
