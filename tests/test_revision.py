@@ -37,11 +37,12 @@ def _make_spec() -> GPSpec:
         noise=NoiseSpec(
             fixed=True,
             noise_value=1e-4,
-            prior=PriorSpec(distribution="Gamma"),
+            prior=PriorSpec(distribution="Gamma", params={"concentration": 2.0, "rate": 0.5}),
         ),
         input_dim=4,
-        output_dim=2,
+        output_dim=1,
         task_feature_index=3,
+        task_values=[0, 1],
         multitask_rank=1,
     )
 
@@ -150,6 +151,19 @@ class TestReviseSwitchToSingleTask:
         assert result is not None
         assert result.revised_spec.task_feature_index is None
 
+    def test_clears_task_values(self) -> None:
+        spec = _make_spec()
+        result = revise_dsl(spec, "error", attempt=3)
+        assert result is not None
+        assert result.revised_spec.task_values is None
+
+    def test_downgrade_reenables_single_task_outcome_standardization(self) -> None:
+        spec = _make_spec()
+        spec.execution.outcome_standardization = False
+        result = revise_dsl(spec, "error", attempt=3)
+        assert result is not None
+        assert result.revised_spec.execution.outcome_standardization is True
+
     def test_clears_multitask_rank(self) -> None:
         spec = _make_spec()
         result = revise_dsl(spec, "error", attempt=3)
@@ -162,6 +176,12 @@ class TestReviseSwitchToSingleTask:
         assert result is not None
         assert len(result.revised_spec.feature_groups) == 1
         assert result.revised_spec.feature_groups[0].kernel.kernel_type == KernelType.MATERN_52
+
+    def test_downgrade_preserves_only_original_continuous_features(self) -> None:
+        spec = _make_spec()
+        result = revise_dsl(spec, "error", attempt=3)
+        assert result is not None
+        assert result.revised_spec.feature_groups[0].feature_indices == [0, 1, 2]
 
 
 class TestReviseDefaultNoise:

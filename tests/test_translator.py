@@ -9,6 +9,7 @@ from gparchitect.dsl.schema import (
     KernelType,
     MeanFunctionType,
     ModelClass,
+    PriorDistribution,
 )
 from gparchitect.translator.translator import translate_to_dsl
 
@@ -73,11 +74,17 @@ class TestTranslateModelClassDetection:
         assert spec.model_class == ModelClass.SINGLE_TASK_GP
 
     def test_multitask_keyword(self) -> None:
-        spec = translate_to_dsl("Use a multi-task GP", input_dim=4, output_dim=2, task_feature_index=3)
+        spec = translate_to_dsl(
+            "Use a multi-task GP",
+            input_dim=4,
+            output_dim=1,
+            task_feature_index=3,
+            task_values=[0, 1],
+        )
         assert spec.model_class == ModelClass.MULTI_TASK_GP
 
     def test_task_feature_index_forces_multitask(self) -> None:
-        spec = translate_to_dsl("Just a GP", input_dim=4, output_dim=2, task_feature_index=3)
+        spec = translate_to_dsl("Just a GP", input_dim=4, output_dim=1, task_feature_index=3, task_values=[0, 1])
         assert spec.model_class == ModelClass.MULTI_TASK_GP
 
     def test_model_list_keyword(self) -> None:
@@ -133,6 +140,24 @@ class TestTranslateNoise:
         spec = translate_to_dsl("Noiseless GP", input_dim=2)
         assert spec.noise.fixed is True
 
+    def test_gamma_noise_prior_phrase_is_parsed(self) -> None:
+        spec = translate_to_dsl(
+            "Use an rbf kernel with gamma prior on noise concentration 2.0 rate 0.5",
+            input_dim=2,
+        )
+        assert spec.noise.prior is not None
+        assert spec.noise.prior.distribution == PriorDistribution.GAMMA
+        assert spec.noise.prior.params == {"concentration": 2.0, "rate": 0.5}
+
+    def test_noise_target_first_gamma_prior_phrase_is_parsed(self) -> None:
+        spec = translate_to_dsl(
+            "Use an rbf kernel where observation noise has a gamma prior with shape 2.0 beta 0.5",
+            input_dim=2,
+        )
+        assert spec.noise.prior is not None
+        assert spec.noise.prior.distribution == PriorDistribution.GAMMA
+        assert spec.noise.prior.params == {"concentration": 2.0, "rate": 0.5}
+
 
 class TestTranslateMeans:
     def test_default_mean_is_unset(self) -> None:
@@ -173,6 +198,7 @@ class TestTranslateMeans:
         )
         assert spec.output_means[0].mean_type == MeanFunctionType.ZERO
         assert spec.output_means[1].mean_type == MeanFunctionType.CONSTANT
+        assert spec.task_values == [0, 1]
 
 
 class TestTranslateComposition:
@@ -260,13 +286,30 @@ class TestTranslateStructure:
         assert spec.output_dim == 2
 
     def test_feature_indices_exclude_task_column(self) -> None:
-        spec = translate_to_dsl("GP model", input_dim=4, output_dim=2, task_feature_index=3)
+        spec = translate_to_dsl("GP model", input_dim=4, output_dim=1, task_feature_index=3, task_values=[0, 1])
         for group in spec.feature_groups:
             assert 3 not in group.feature_indices
 
-    def test_model_list_creates_multiple_groups(self) -> None:
+    def test_single_task_defaults_to_explicit_execution_spec(self) -> None:
+        spec = translate_to_dsl("GP model", input_dim=2)
+        assert spec.execution.input_scaling is True
+        assert spec.execution.outcome_standardization is True
+
+    def test_multitask_defaults_disable_outcome_standardization(self) -> None:
+        spec = translate_to_dsl(
+            "multitask GP",
+            input_dim=3,
+            output_dim=1,
+            task_feature_index=2,
+            task_values=[0, 1],
+        )
+        assert spec.execution.input_scaling is True
+        assert spec.execution.outcome_standardization is False
+
+    def test_model_list_uses_single_shared_group_when_no_feature_mapping_exists(self) -> None:
         spec = translate_to_dsl("ModelListGP", input_dim=3, output_dim=3)
-        assert len(spec.feature_groups) == 3
+        assert len(spec.feature_groups) == 1
+        assert spec.feature_groups[0].feature_indices == [0, 1, 2]
 
     def test_description_contains_instruction(self) -> None:
         spec = translate_to_dsl("Use Matern52 with ARD", input_dim=2)
@@ -287,7 +330,7 @@ class TestTranslateStructure:
         assert spec1.model_dump() == spec2.model_dump()
 
     def test_multitask_rank_set(self) -> None:
-        spec = translate_to_dsl("multitask GP", input_dim=5, output_dim=3, task_feature_index=4)
+        spec = translate_to_dsl("multitask GP", input_dim=5, output_dim=1, task_feature_index=4, task_values=[0, 1])
         assert spec.multitask_rank is not None
         assert spec.multitask_rank >= 1
 
@@ -346,3 +389,39 @@ class TestTranslateKernelSpecificParameters:
         assert kernel.kernel_type == KernelType.EXPONENTIAL_DECAY
         assert kernel.exponential_decay_power == pytest.approx(2.5)
         assert kernel.exponential_decay_offset == pytest.approx(0.2)
+
+    def test_prior_phrases_are_parsed_into_kernel_specs(self) -> None:
+        spec = translate_to_dsl(
+            (
+                "Use a periodic kernel with normal prior on lengthscale loc 0.0 scale 1.0, "
+                "uniform prior on period a 0.5 b 3.0, and halfcauchy prior on outputscale scale 0.75"
+            ),
+            input_dim=1,
+        )
+        kernel = spec.feature_groups[0].kernel
+        assert kernel.lengthscale_prior is not None
+        assert kernel.lengthscale_prior.distribution == PriorDistribution.NORMAL
+        assert kernel.period_prior is not None
+        assert kernel.period_prior.distribution == PriorDistribution.UNIFORM
+        assert kernel.outputscale_prior is not None
+        assert kernel.outputscale_prior.distribution == PriorDistribution.HALF_CAUCHY
+
+    def test_target_first_prior_phrases_with_synonyms_are_parsed(self) -> None:
+        spec = translate_to_dsl(
+            (
+                "Use a periodic kernel where length scale has a normal prior with mean 0.0 std 1.0, "
+                "period length has a uniform prior between 0.5 and 3.0, and output scale has a "
+                "half-cauchy prior with beta 0.75"
+            ),
+            input_dim=1,
+        )
+        kernel = spec.feature_groups[0].kernel
+        assert kernel.lengthscale_prior is not None
+        assert kernel.lengthscale_prior.distribution == PriorDistribution.NORMAL
+        assert kernel.lengthscale_prior.params == {"loc": 0.0, "scale": 1.0}
+        assert kernel.period_prior is not None
+        assert kernel.period_prior.distribution == PriorDistribution.UNIFORM
+        assert kernel.period_prior.params == {"a": 0.5, "b": 3.0}
+        assert kernel.outputscale_prior is not None
+        assert kernel.outputscale_prior.distribution == PriorDistribution.HALF_CAUCHY
+        assert kernel.outputscale_prior.params == {"scale": 0.75}

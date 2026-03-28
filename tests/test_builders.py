@@ -11,6 +11,7 @@ import pytest
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -19,6 +20,8 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
+    PriorSpec,
 )
 
 
@@ -463,6 +466,22 @@ class TestBuildModelMocked:
         assert isinstance(model, SingleTaskGP)
         assert model.outcome_transform is not None
 
+    def test_single_task_gp_can_disable_outcome_standardization(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import torch
+        from botorch.models import SingleTaskGP
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_continuous_spec(input_dim=2)
+        spec.execution = ExecutionSpec(outcome_standardization=False)
+        train_X = torch.zeros(5, 2, dtype=torch.double)
+        train_Y = torch.zeros(5, 1, dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model, SingleTaskGP)
+        assert getattr(model, "outcome_transform", None) is None
+
     def test_invalid_model_class_raises(self) -> None:
         try:
             import torch
@@ -496,6 +515,64 @@ class TestBuildModelMocked:
 
         assert isinstance(model.mean_module, gpytorch.means.ZeroMean)
         assert isinstance(model.likelihood, gpytorch.likelihoods.FixedNoiseGaussianLikelihood)
+
+    def test_single_task_gp_applies_supported_kernel_and_noise_priors(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import gpytorch
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_continuous_spec(input_dim=2)
+        spec.feature_groups[0].kernel = KernelSpec(
+            kernel_type=KernelType.PERIODIC,
+            ard=True,
+            lengthscale_prior=PriorSpec(distribution=PriorDistribution.NORMAL, params={"loc": 0.0, "scale": 1.0}),
+            outputscale_prior=PriorSpec(distribution=PriorDistribution.GAMMA, params={"concentration": 2.0, "rate": 0.5}),
+            period_prior=PriorSpec(distribution=PriorDistribution.LOG_NORMAL, params={"loc": 0.0, "scale": 1.0}),
+        )
+        spec.noise = NoiseSpec(
+            fixed=False,
+            prior=PriorSpec(distribution=PriorDistribution.GAMMA, params={"concentration": 3.0, "rate": 1.5}),
+        )
+
+        train_X = torch.zeros(5, 2, dtype=torch.double)
+        train_Y = torch.zeros(5, 1, dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model.covar_module, gpytorch.kernels.ScaleKernel)
+        assert isinstance(model.covar_module.base_kernel, gpytorch.kernels.PeriodicKernel)
+        assert model.covar_module.base_kernel.lengthscale_prior is not None
+        assert model.covar_module.base_kernel.period_length_prior is not None
+        assert model.covar_module.outputscale_prior is not None
+        assert model.likelihood.noise_covar.noise_prior is not None
+
+    def test_single_task_gp_applies_half_cauchy_and_uniform_priors(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import torch
+        from gpytorch.priors.torch_priors import HalfCauchyPrior, UniformPrior
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_continuous_spec(input_dim=2)
+        spec.feature_groups[0].kernel = KernelSpec(
+            kernel_type=KernelType.PERIODIC,
+            ard=True,
+            lengthscale_prior=PriorSpec(distribution=PriorDistribution.HALF_CAUCHY, params={"scale": 0.75}),
+            period_prior=PriorSpec(distribution=PriorDistribution.UNIFORM, params={"a": 0.1, "b": 2.0}),
+        )
+        spec.noise = NoiseSpec(
+            fixed=False,
+            prior=PriorSpec(distribution=PriorDistribution.HALF_CAUCHY, params={"scale": 0.2}),
+        )
+
+        train_X = torch.zeros(5, 2, dtype=torch.double)
+        train_Y = torch.zeros(5, 1, dtype=torch.double)
+        model = build_model_from_dsl(spec, train_X, train_Y)
+
+        assert isinstance(model.covar_module.base_kernel.lengthscale_prior, HalfCauchyPrior)
+        assert isinstance(model.covar_module.base_kernel.period_length_prior, UniformPrior)
+        assert isinstance(model.likelihood.noise_covar.noise_prior, HalfCauchyPrior)
 
     def test_model_list_gp_supports_per_output_means(self) -> None:
         self._skip_if_no_torch_botorch()
@@ -539,6 +616,7 @@ class TestBuildModelMocked:
             input_dim=3,
             output_dim=1,
             task_feature_index=2,
+            task_values=[0, 1],
             multitask_rank=1,
             output_means={0: MeanSpec(mean_type=MeanFunctionType.ZERO), 1: MeanSpec(mean_type=MeanFunctionType.CONSTANT)},
         )
@@ -579,6 +657,7 @@ class TestBuildModelMocked:
             input_dim=3,
             output_dim=1,
             task_feature_index=2,
+            task_values=[0, 1],
             multitask_rank=1,
         )
 
@@ -593,6 +672,38 @@ class TestBuildModelMocked:
         reference_model = MultiTaskGP(train_X=full_X, train_Y=full_Y, task_feature=-1)
 
         assert type(model.likelihood) is type(reference_model.likelihood)
+
+    def test_multitask_gp_rejects_observed_task_values_outside_declared_domain(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="continuous",
+                    feature_indices=[0, 1],
+                    kernel=KernelSpec(kernel_type=KernelType.RBF),
+                )
+            ],
+            noise=NoiseSpec(),
+            input_dim=3,
+            output_dim=1,
+            task_feature_index=2,
+            task_values=[0],
+            multitask_rank=1,
+        )
+
+        train_X = torch.tensor(
+            [[0.0, 0.1, 0.0], [1.0, 0.2, 1.0]],
+            dtype=torch.double,
+        )
+        train_Y = torch.tensor([[0.0], [1.0]], dtype=torch.double)
+
+        with pytest.raises(ValueError, match="task_values"):
+            build_model_from_dsl(spec, train_X, train_Y)
 
 
 class TestDataPrepare:
@@ -650,6 +761,20 @@ class TestDataPrepare:
         bundle = prepare_data(df, input_columns=["x1"], output_columns=["y"])
 
         assert bundle.train_X[:, 0].tolist() == [0.0, 0.0, 0.0]
+
+    def test_prepare_data_can_preserve_raw_inputs_when_scaling_disabled(self) -> None:
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas not installed")
+
+        from gparchitect.builders.data import prepare_data
+
+        df = pd.DataFrame({"x1": [2.0, 3.0, 5.0], "y": [0.1, 0.2, 0.3]})
+        bundle = prepare_data(df, input_columns=["x1"], output_columns=["y"], scale_inputs=False)
+
+        assert bundle.input_scaling_applied is False
+        assert bundle.train_X[:, 0].tolist() == [2.0, 3.0, 5.0]
 
     def test_prepare_data_missing_column_raises(self) -> None:
         try:

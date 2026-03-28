@@ -70,14 +70,17 @@ def prepare_data(
     input_columns: list[str],
     output_columns: list[str],
     task_column: str | None = None,
+    *,
+    scale_inputs: bool = True,
 ) -> DataBundle:
-    """Convert a pandas DataFrame into a DataBundle of scaled torch tensors.
+    """Convert a pandas DataFrame into a DataBundle of torch tensors.
 
     Args:
         dataframe: A pandas DataFrame with numeric columns.
         input_columns: Column names to use as model inputs.
         output_columns: Column names to use as model outputs.
         task_column: Optional column name for the task indicator (MultiTaskGP).
+        scale_inputs: Whether to min-max scale continuous input columns.
 
     Returns:
         DataBundle containing train_X, train_Y, and associated metadata.
@@ -112,10 +115,11 @@ def prepare_data(
         column_max = float(scaled_inputs[column].max())
         input_feature_ranges[column] = (column_min, column_max)
         scale = column_max - column_min
-        if scale > 0:
-            scaled_inputs[column] = (scaled_inputs[column] - column_min) / scale
-        else:
-            scaled_inputs[column] = 0.0
+        if scale_inputs:
+            if scale > 0:
+                scaled_inputs[column] = (scaled_inputs[column] - column_min) / scale
+            else:
+                scaled_inputs[column] = 0.0
 
     train_X_frame = scaled_inputs.copy()
     if task_column is not None:
@@ -146,6 +150,6 @@ def prepare_data(
         input_columns=input_cols_full,
         output_columns=output_columns,
         task_column=task_column,
-        input_scaling_applied=True,
+        input_scaling_applied=scale_inputs,
         input_feature_ranges=input_feature_ranges,
     )

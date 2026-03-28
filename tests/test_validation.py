@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import pytest
+from pydantic import ValidationError
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -14,6 +16,7 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
     PriorSpec,
 )
 from gparchitect.validation.validator import ValidationResult, validate_dsl, validate_or_raise
@@ -107,7 +110,7 @@ class TestValidateFeatureGroups:
                 )
             ],
             input_dim=3,
-            output_dim=2,
+            output_dim=1,
             task_feature_index=2,
         )
         result = validate_dsl(spec)
@@ -133,14 +136,32 @@ class TestValidateModelClass:
                 )
             ],
             input_dim=2,
-            output_dim=2,
+            output_dim=1,
             task_feature_index=None,
         )
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("task_feature_index" in e for e in result.errors)
 
-    def test_multitask_invalid_rank_fails(self) -> None:
+    def test_multitask_requires_task_values(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="all",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("task_values" in e for e in result.errors)
+
+    def test_multitask_requires_long_format_output_dim(self) -> None:
         spec = GPSpec(
             model_class=ModelClass.MULTI_TASK_GP,
             feature_groups=[
@@ -153,6 +174,26 @@ class TestValidateModelClass:
             input_dim=2,
             output_dim=2,
             task_feature_index=1,
+            task_values=[0, 1],
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("output_dim=1" in error for error in result.errors)
+
+    def test_multitask_invalid_rank_fails(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="features",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+            task_values=[0, 1],
             multitask_rank=0,
         )
         result = validate_dsl(spec)
@@ -206,6 +247,40 @@ class TestValidateNoise:
         result = validate_dsl(spec)
         assert result.is_valid
 
+    def test_fixed_noise_rejects_noise_prior(self) -> None:
+        spec = _make_simple_spec()
+        spec.noise.fixed = True
+        spec.noise.noise_value = 1e-4
+        spec.noise.prior = PriorSpec(
+            distribution=PriorDistribution.GAMMA,
+            params={"concentration": 2.0, "rate": 0.5},
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("noise.prior" in error for error in result.errors)
+
+
+class TestValidateExecution:
+    def test_multitask_rejects_outcome_standardization(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="features",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+            task_values=[0, 1],
+            execution=ExecutionSpec(outcome_standardization=True),
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("outcome_standardization" in error for error in result.errors)
+
 
 class TestValidateMeans:
     def test_single_task_rejects_output_means(self) -> None:
@@ -242,24 +317,151 @@ class TestValidateMeans:
         assert not result.is_valid
         assert any("task index" in error for error in result.errors)
 
+    def test_multitask_targeted_means_require_task_values(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="features",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+            output_means={0: MeanSpec(mean_type=MeanFunctionType.CONSTANT)},
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("task_values" in error for error in result.errors)
+
+    def test_multitask_targeted_means_must_match_declared_task_values(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="features",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+            task_feature_index=1,
+            task_values=[0],
+            output_means={1: MeanSpec(mean_type=MeanFunctionType.CONSTANT)},
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("task_values" in error for error in result.errors)
+
 
 class TestValidatePriors:
     def test_prior_without_distribution_fails(self) -> None:
-        spec = _make_simple_spec()
-        spec.feature_groups[0].kernel.lengthscale_prior = PriorSpec(distribution="")
-        result = validate_dsl(spec)
-        assert not result.is_valid
+        with pytest.raises(ValidationError):
+            PriorSpec(distribution="")
 
     def test_valid_prior_passes(self) -> None:
         spec = _make_simple_spec()
         spec.feature_groups[0].kernel.lengthscale_prior = PriorSpec(
-            distribution="Normal", params={"loc": 0.0, "scale": 1.0}
+            distribution=PriorDistribution.NORMAL,
+            params={"loc": 0.0, "scale": 1.0},
         )
         result = validate_dsl(spec)
         assert result.is_valid
 
+    def test_half_cauchy_prior_passes_with_required_params(self) -> None:
+        spec = _make_simple_spec()
+        spec.feature_groups[0].kernel.outputscale_prior = PriorSpec(
+            distribution=PriorDistribution.HALF_CAUCHY,
+            params={"scale": 1.0},
+        )
+        result = validate_dsl(spec)
+        assert result.is_valid
 
-class TestValidateKernelSpecificParameters:
+    def test_uniform_prior_passes_with_required_params(self) -> None:
+        spec = _make_simple_spec()
+        spec.noise.prior = PriorSpec(
+            distribution=PriorDistribution.UNIFORM,
+            params={"a": 1e-4, "b": 0.5},
+        )
+        result = validate_dsl(spec)
+        assert result.is_valid
+
+    def test_half_cauchy_prior_requires_scale(self) -> None:
+        spec = _make_simple_spec()
+        spec.feature_groups[0].kernel.outputscale_prior = PriorSpec(
+            distribution=PriorDistribution.HALF_CAUCHY,
+            params={},
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("scale" in error for error in result.errors)
+
+    def test_uniform_prior_requires_bounds(self) -> None:
+        spec = _make_simple_spec()
+        spec.noise.prior = PriorSpec(distribution=PriorDistribution.UNIFORM, params={"a": 0.0})
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("b" in error for error in result.errors)
+
+    def test_unsupported_prior_distribution_fails(self) -> None:
+        with pytest.raises(ValidationError):
+            PriorSpec(distribution="Laplace", params={"loc": 0.0, "scale": 1.0})
+
+    def test_period_prior_requires_periodic_kernel(self) -> None:
+        spec = _make_simple_spec()
+        spec.feature_groups[0].kernel.period_prior = PriorSpec(
+            distribution=PriorDistribution.LOG_NORMAL,
+            params={"loc": 0.0, "scale": 1.0},
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("period_prior" in error for error in result.errors)
+
+    def test_outputscale_prior_rejects_composed_kernel(self) -> None:
+        spec = _make_simple_spec(input_dim=1)
+        spec.feature_groups[0].kernel = KernelSpec(
+            kernel_type=KernelType.RBF,
+            composition=CompositionType.ADDITIVE,
+            children=[KernelSpec(kernel_type=KernelType.RBF)],
+            outputscale_prior=PriorSpec(
+                distribution=PriorDistribution.GAMMA,
+                params={"concentration": 2.0, "rate": 0.5},
+            ),
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("outputscale_prior" in error for error in result.errors)
+
+
+class TestValidateComposition:
+    def test_multiple_groups_reject_composition_none(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="x1",
+                    feature_indices=[0],
+                    kernel=KernelSpec(kernel_type=KernelType.RBF),
+                ),
+                FeatureGroupSpec(
+                    name="x2",
+                    feature_indices=[1],
+                    kernel=KernelSpec(kernel_type=KernelType.MATERN_52),
+                ),
+            ],
+            input_dim=2,
+            output_dim=1,
+            group_composition=CompositionType.NONE,
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("composition=none" in error for error in result.errors)
+
+
+class TestValidateKernelParameterConstraints:
     def test_invalid_polynomial_power_fails(self) -> None:
         spec = _make_simple_spec()
         spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.POLYNOMIAL, polynomial_power=0)

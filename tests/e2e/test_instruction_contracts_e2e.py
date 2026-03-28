@@ -215,6 +215,7 @@ def test_multitask_instruction_contract_runs_end_to_end() -> None:
 
     spec_snapshot = _assert_single_attempt_success(log)
     assert spec_snapshot["model_class"] == "MultiTaskGP"
+    assert spec_snapshot["task_values"] == [0, 1]
     assert spec_snapshot["output_means"]["0"]["mean_type"] == "Zero"
     assert spec_snapshot["output_means"]["1"]["mean_type"] == "Constant"
     _assert_feature_groups(spec_snapshot, [([0], "RBF"), ([1], "Matern32")])

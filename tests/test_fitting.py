@@ -177,6 +177,7 @@ class TestFitAndValidateMocked:
             input_dim=3,
             output_dim=1,
             task_feature_index=2,
+            task_values=[0, 1],
             multitask_rank=1,
             output_means={
                 0: MeanSpec(mean_type=MeanFunctionType.ZERO),

@@ -13,7 +13,7 @@ Inputs:
 
 Outputs:
     Pydantic model classes: GPSpec, KernelSpec, FeatureGroupSpec, PriorSpec, NoiseSpec,
-    MeanSpec.
+    MeanSpec, ExecutionSpec.
 
 Non-obvious design decisions:
     - All fields use native Python typing (list, dict, X | None) per project style.
@@ -83,16 +83,38 @@ class MeanFunctionType(str, Enum):
     LINEAR = "Linear"
 
 
+class PriorDistribution(str, Enum):
+    """Supported GP prior distributions in the DSL contract."""
+
+    NORMAL = "Normal"
+    LOG_NORMAL = "LogNormal"
+    GAMMA = "Gamma"
+    HALF_CAUCHY = "HalfCauchy"
+    UNIFORM = "Uniform"
+
+
 class PriorSpec(BaseModel):
     """Specification for a GP hyperparameter prior.
 
     Attributes:
-        distribution: Name of the prior distribution (e.g. "Normal", "LogNormal", "Gamma").
+        distribution: Name of the prior distribution.
         params: Distribution parameters as a name→value mapping.
     """
 
-    distribution: str
+    distribution: PriorDistribution
     params: dict[str, float] = Field(default_factory=dict)
+
+
+class ExecutionSpec(BaseModel):
+    """Execution semantics that affect how a validated DSL is run.
+
+    Attributes:
+        input_scaling: Whether continuous inputs are min-max scaled before model building.
+        outcome_standardization: Whether BoTorch outcome transforms standardize outputs where supported.
+    """
+
+    input_scaling: bool = True
+    outcome_standardization: bool = True
 
 
 class NoiseSpec(BaseModel):
@@ -185,9 +207,11 @@ class GPSpec(BaseModel):
         mean: Optional shared mean-function specification.
         output_means: Optional per-output or per-task mean overrides.
         noise: Noise model specification.
+        execution: Execution semantics that affect preprocessing and model transforms.
         input_dim: Total number of input features.
-        output_dim: Number of output dimensions (1 for single-task).
+        output_dim: Number of output dimensions.
         task_feature_index: Column index of the task indicator (MultiTaskGP only).
+        task_values: Optional explicit task domain for MultiTaskGP targeted overrides.
         multitask_rank: Rank of the inter-task covariance (MultiTaskGP only).
         group_composition: How feature-group kernels are combined.
         description: Optional human-readable summary of the specification.
@@ -198,9 +222,11 @@ class GPSpec(BaseModel):
     mean: MeanSpec | None = None
     output_means: dict[int, MeanSpec] = Field(default_factory=dict)
     noise: NoiseSpec = Field(default_factory=NoiseSpec)
+    execution: ExecutionSpec = Field(default_factory=ExecutionSpec)
     input_dim: int = 1
     output_dim: int = 1
     task_feature_index: int | None = None
+    task_values: list[int] | None = None
     multitask_rank: int | None = None
     group_composition: CompositionType = CompositionType.ADDITIVE
     description: str = ""

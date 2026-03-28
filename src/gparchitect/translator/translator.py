@@ -38,6 +38,7 @@ import re
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -46,6 +47,8 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
+    PriorSpec,
     SpectralMixtureInitialization,
 )
 
@@ -122,6 +125,56 @@ _MEAN_PATTERN = re.compile(
     r"(constant|zero|linear)\s+mean\b(?:\s+for\s+(output|task)\s+(\d+))?",
     re.IGNORECASE,
 )
+_PRIOR_DISTRIBUTION_ALIASES = {
+    "lognormal": PriorDistribution.LOG_NORMAL,
+    "log-normal": PriorDistribution.LOG_NORMAL,
+    "halfcauchy": PriorDistribution.HALF_CAUCHY,
+    "half-cauchy": PriorDistribution.HALF_CAUCHY,
+    "half cauchy": PriorDistribution.HALF_CAUCHY,
+    "normal": PriorDistribution.NORMAL,
+    "gamma": PriorDistribution.GAMMA,
+    "uniform": PriorDistribution.UNIFORM,
+}
+_PRIOR_TARGET_ALIASES = {
+    "lengthscale": "lengthscale",
+    "length scale": "lengthscale",
+    "outputscale": "outputscale",
+    "output scale": "outputscale",
+    "period": "period",
+    "period length": "period",
+    "noise": "noise",
+    "observation noise": "noise",
+    "noise variance": "noise",
+}
+_PRIOR_DISTRIBUTION_PATTERN = (
+    r"lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform"
+)
+_PRIOR_TARGET_PATTERN = (
+    r"lengthscale|length\s+scale|outputscale|output\s+scale|period(?:\s+length)?|"
+    r"observation\s+noise|noise\s+variance|noise"
+)
+_PRIOR_END_PATTERN = (
+    r"(?=(?:\b(?:lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform)"
+    r"\s+prior\s+(?:on|for)\b)|(?:\b(?:lengthscale|length\s+scale|outputscale|output\s+scale|"
+    r"period(?:\s+length)?|observation\s+noise|noise\s+variance|noise)\b\s+"
+    r"(?:has|have|uses?|using|with|follows?)\s+(?:a|an)?\s*"
+    r"(?:lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform)"
+    r"\s+prior\b)|(?:[,;]|(?<!\d)\.(?!\d))|$)"
+)
+_PRIOR_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(
+        rf"\b(?P<distribution>{_PRIOR_DISTRIBUTION_PATTERN})\s+prior\s+(?:on|for)\s+"
+        rf"(?P<target>{_PRIOR_TARGET_PATTERN})\b(?P<params>.*?){_PRIOR_END_PATTERN}",
+        re.IGNORECASE,
+    ),
+    re.compile(
+        rf"\b(?P<target>{_PRIOR_TARGET_PATTERN})\b\s+"
+        rf"(?:has|have|uses?|using|with|follows?)\s+(?:a|an)?\s*"
+        rf"(?P<distribution>{_PRIOR_DISTRIBUTION_PATTERN})\s+prior\b"
+        rf"(?P<params>.*?){_PRIOR_END_PATTERN}",
+        re.IGNORECASE,
+    ),
+]
 
 _ARD_SUPPORTED_KERNELS = {
     KernelType.RBF,
@@ -131,6 +184,35 @@ _ARD_SUPPORTED_KERNELS = {
     KernelType.MATERN_52,
     KernelType.PERIODIC,
 }
+_PRIOR_PARAM_PATTERNS: dict[PriorDistribution, dict[str, re.Pattern[str]]] = {
+    PriorDistribution.NORMAL: {
+        "loc": re.compile(r"\b(?:loc|mean|mu)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "scale": re.compile(r"\b(?:scale|std(?:dev)?|sigma)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.LOG_NORMAL: {
+        "loc": re.compile(r"\b(?:loc|mean|mu)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "scale": re.compile(r"\b(?:scale|std(?:dev)?|sigma)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.GAMMA: {
+        "concentration": re.compile(
+            r"\b(?:concentration|shape|alpha)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
+            re.IGNORECASE,
+        ),
+        "rate": re.compile(r"\b(?:rate|beta)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.HALF_CAUCHY: {
+        "scale": re.compile(r"\b(?:scale|beta)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+    PriorDistribution.UNIFORM: {
+        "a": re.compile(r"\b(?:a|low|lower|min(?:imum)?)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+        "b": re.compile(r"\b(?:b|high|upper|max(?:imum)?)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
+    },
+}
+_UNIFORM_RANGE_PATTERN = re.compile(
+    r"\b(?:between\s*(-?[0-9]*\.?[0-9]+)\s+and\s*(-?[0-9]*\.?[0-9]+)|"
+    r"from\s*(-?[0-9]*\.?[0-9]+)\s+to\s*(-?[0-9]*\.?[0-9]+))\b",
+    re.IGNORECASE,
+)
 
 
 def _extract_rq_alpha(instruction: str) -> float | None:
@@ -265,6 +347,64 @@ def _detect_noise(instruction: str) -> NoiseSpec:
     if _FIXED_NOISE_PATTERN.search(instruction):
         return NoiseSpec(fixed=True, noise_value=1e-4)
     return NoiseSpec(fixed=False)
+
+
+def _parse_prior_params(distribution: PriorDistribution, params_text: str) -> dict[str, float]:
+    """Extract prior parameters from the trailing text of a prior phrase."""
+    extracted: dict[str, float] = {}
+    for param_name, pattern in _PRIOR_PARAM_PATTERNS[distribution].items():
+        match = pattern.search(params_text)
+        if match is not None:
+            extracted[param_name] = float(match.group(1))
+
+    if distribution == PriorDistribution.UNIFORM and ("a" not in extracted or "b" not in extracted):
+        range_match = _UNIFORM_RANGE_PATTERN.search(params_text)
+        if range_match is not None:
+            lower = range_match.group(1) or range_match.group(3)
+            upper = range_match.group(2) or range_match.group(4)
+            if lower is not None and upper is not None:
+                extracted.setdefault("a", float(lower))
+                extracted.setdefault("b", float(upper))
+
+    return extracted
+
+
+def _normalize_prior_distribution(raw_distribution: str) -> PriorDistribution:
+    """Normalize a parsed natural-language prior distribution name."""
+    return _PRIOR_DISTRIBUTION_ALIASES[raw_distribution.lower()]
+
+
+def _normalize_prior_target(raw_target: str) -> str:
+    """Normalize a parsed natural-language prior target name."""
+    return _PRIOR_TARGET_ALIASES[raw_target.lower()]
+
+
+def _apply_detected_priors(instruction: str, kernel_spec: KernelSpec, noise: NoiseSpec) -> None:
+    """Apply parsed prior phrases to a kernel or noise spec in place."""
+    for pattern in _PRIOR_PATTERNS:
+        for match in pattern.finditer(instruction):
+            distribution = _normalize_prior_distribution(match.group("distribution"))
+            prior = PriorSpec(
+                distribution=distribution,
+                params=_parse_prior_params(distribution, match.group("params")),
+            )
+            target = _normalize_prior_target(match.group("target"))
+            if target == "lengthscale":
+                kernel_spec.lengthscale_prior = prior
+            elif target == "outputscale":
+                kernel_spec.outputscale_prior = prior
+            elif target == "period":
+                kernel_spec.period_prior = prior
+            elif target == "noise":
+                noise.prior = prior
+
+
+def _default_execution_spec(model_class: ModelClass) -> ExecutionSpec:
+    """Return the default execution semantics for a translated spec."""
+    return ExecutionSpec(
+        input_scaling=True,
+        outcome_standardization=model_class != ModelClass.MULTI_TASK_GP,
+    )
 
 
 def _parse_mean_type(mean_name: str) -> MeanFunctionType:
@@ -421,6 +561,7 @@ def translate_to_dsl(
     input_dim: int,
     output_dim: int = 1,
     task_feature_index: int | None = None,
+    task_values: list[int] | None = None,
     input_feature_names: list[str] | None = None,
 ) -> GPSpec:
     """Translate a natural-language GP instruction into a GPSpec DSL object.
@@ -432,6 +573,7 @@ def translate_to_dsl(
         input_dim: Total number of continuous input features.
         output_dim: Number of model outputs (default 1).
         task_feature_index: Column index of the task indicator for MultiTaskGP.
+        task_values: Optional explicit task domain for MultiTaskGP.
         input_feature_names: Optional continuous feature names used for column-aware parsing.
 
     Returns:
@@ -448,25 +590,28 @@ def translate_to_dsl(
     noise = _detect_noise(instruction)
     use_ard = _resolve_ard_setting(instruction, kernel_type)
     default_kernel_spec = _build_kernel_spec(instruction, kernel_type)
+    _apply_detected_priors(instruction, default_kernel_spec, noise)
     feature_groups = _extract_feature_groups(instruction, input_feature_names)
     mean, output_means = _detect_means(instruction, model_class, output_dim)
+
+    resolved_task_values = task_values
 
     if feature_groups:
         composition = explicit_composition
         if composition is None:
             composition = CompositionType.HIERARCHICAL if len(feature_groups) > 1 else CompositionType.ADDITIVE
+        for group in feature_groups:
+            _apply_detected_priors(instruction, group.kernel, noise)
 
-    # For ModelListGP, create one feature group per output when no column-specific mapping is provided.
     elif model_class == ModelClass.MODEL_LIST_GP:
         composition = explicit_composition or CompositionType.ADDITIVE
         continuous_indices = [idx for idx in range(input_dim) if idx != task_feature_index]
         feature_groups = [
             FeatureGroupSpec(
-                name=f"output_{output_idx}_features",
+                name="all_features",
                 feature_indices=continuous_indices,
                 kernel=default_kernel_spec.model_copy(deep=True),
             )
-            for output_idx in range(output_dim)
         ]
     else:
         composition = explicit_composition or CompositionType.ADDITIVE
@@ -482,6 +627,8 @@ def translate_to_dsl(
     multitask_rank: int | None = None
     if model_class == ModelClass.MULTI_TASK_GP:
         multitask_rank = min(output_dim, 2)
+        if resolved_task_values is None and output_means:
+            resolved_task_values = sorted(output_means)
 
     description = (
         f"Translated from: '{instruction[:80]}{'...' if len(instruction) > 80 else ''}' | "
@@ -494,9 +641,11 @@ def translate_to_dsl(
         mean=mean,
         output_means=output_means,
         noise=noise,
+        execution=_default_execution_spec(model_class),
         input_dim=input_dim,
         output_dim=output_dim,
         task_feature_index=task_feature_index,
+        task_values=resolved_task_values,
         multitask_rank=multitask_rank,
         group_composition=composition,
         description=description,

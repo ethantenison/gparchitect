@@ -49,6 +49,8 @@ from gparchitect.dsl.schema import (
     MeanFunctionType,
     MeanSpec,
     ModelClass,
+    PriorDistribution,
+    PriorSpec,
     SpectralMixtureInitialization,
 )
 
@@ -56,6 +58,36 @@ if TYPE_CHECKING:
     import torch
 
 logger = logging.getLogger(__name__)
+
+
+def _build_gpytorch_prior(prior_spec: PriorSpec | None):  # noqa: ANN201
+    """Build a supported GPyTorch prior from a PriorSpec."""
+    if prior_spec is None:
+        return None
+
+    from gpytorch.priors.torch_priors import GammaPrior, HalfCauchyPrior, LogNormalPrior, NormalPrior, UniformPrior
+
+    if prior_spec.distribution == PriorDistribution.NORMAL:
+        return NormalPrior(
+            loc=prior_spec.params["loc"],
+            scale=prior_spec.params["scale"],
+        )
+    if prior_spec.distribution == PriorDistribution.LOG_NORMAL:
+        return LogNormalPrior(
+            loc=prior_spec.params["loc"],
+            scale=prior_spec.params["scale"],
+        )
+    if prior_spec.distribution == PriorDistribution.GAMMA:
+        return GammaPrior(
+            concentration=prior_spec.params["concentration"],
+            rate=prior_spec.params["rate"],
+        )
+    if prior_spec.distribution == PriorDistribution.HALF_CAUCHY:
+        return HalfCauchyPrior(scale=prior_spec.params["scale"])
+    if prior_spec.distribution == PriorDistribution.UNIFORM:
+        return UniformPrior(a=prior_spec.params["a"], b=prior_spec.params["b"])
+
+    raise ValueError(f"Unsupported prior distribution: {prior_spec.distribution}")
 
 
 def _build_gpytorch_kernel(kernel_spec: KernelSpec, num_features: int):  # noqa: ANN201
@@ -91,6 +123,9 @@ def _build_gpytorch_kernel_with_active_dims(
     import gpytorch
 
     resolved_ard_num_dims = len(active_dims) if kernel_spec.ard else ard_num_dims
+    lengthscale_prior = _build_gpytorch_prior(kernel_spec.lengthscale_prior)
+    outputscale_prior = _build_gpytorch_prior(kernel_spec.outputscale_prior)
+    period_prior = _build_gpytorch_prior(kernel_spec.period_prior)
 
     if kernel_spec.kernel_type == KernelType.SPECTRAL_MIXTURE:
         num_mixtures = kernel_spec.num_mixtures or 4
@@ -118,30 +153,37 @@ def _build_gpytorch_kernel_with_active_dims(
         KernelType.RBF: lambda: gpytorch.kernels.RBFKernel(
             ard_num_dims=resolved_ard_num_dims,
             active_dims=active_dims,
+            lengthscale_prior=lengthscale_prior,
         ),
         KernelType.RQ: lambda: gpytorch.kernels.RQKernel(
             ard_num_dims=resolved_ard_num_dims,
             active_dims=active_dims,
+            lengthscale_prior=lengthscale_prior,
         ),
         KernelType.MATERN_12: lambda: gpytorch.kernels.MaternKernel(
             nu=0.5,
             ard_num_dims=resolved_ard_num_dims,
             active_dims=active_dims,
+            lengthscale_prior=lengthscale_prior,
         ),
         KernelType.MATERN_32: lambda: gpytorch.kernels.MaternKernel(
             nu=1.5,
             ard_num_dims=resolved_ard_num_dims,
             active_dims=active_dims,
+            lengthscale_prior=lengthscale_prior,
         ),
         KernelType.MATERN_52: lambda: gpytorch.kernels.MaternKernel(
             nu=2.5,
             ard_num_dims=resolved_ard_num_dims,
             active_dims=active_dims,
+            lengthscale_prior=lengthscale_prior,
         ),
         KernelType.LINEAR: lambda: gpytorch.kernels.LinearKernel(active_dims=active_dims),
         KernelType.PERIODIC: lambda: gpytorch.kernels.PeriodicKernel(
             active_dims=active_dims,
             ard_num_dims=resolved_ard_num_dims,
+            lengthscale_prior=lengthscale_prior,
+            period_length_prior=period_prior,
         ),
         KernelType.POLYNOMIAL: lambda: gpytorch.kernels.PolynomialKernel(
             power=kernel_spec.polynomial_power or 2,
@@ -181,6 +223,8 @@ def _build_gpytorch_kernel_with_active_dims(
 
     if kernel_spec.children:
         if kernel_spec.composition == CompositionType.ADDITIVE:
+            if outputscale_prior is not None:
+                raise ValueError("outputscale_prior is only supported on leaf kernels or multiplicative composites.")
             child_kernels = [
                 _build_gpytorch_kernel_with_active_dims(
                     child,
@@ -206,10 +250,16 @@ def _build_gpytorch_kernel_with_active_dims(
             composed = gpytorch.kernels.ProductKernel(*cast(list[Any], child_kernels))
         else:
             composed = gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
-        return gpytorch.kernels.ScaleKernel(composed) if wrap_in_scale else composed
+        if not wrap_in_scale:
+            if outputscale_prior is not None:
+                raise ValueError("outputscale_prior requires an outer ScaleKernel.")
+            return composed
+        return gpytorch.kernels.ScaleKernel(composed, outputscale_prior=outputscale_prior)
 
     should_wrap = wrap_in_scale and kernel_spec.kernel_type != KernelType.SPECTRAL_MIXTURE
-    return gpytorch.kernels.ScaleKernel(base_kernel) if should_wrap else base_kernel
+    if should_wrap:
+        return gpytorch.kernels.ScaleKernel(base_kernel, outputscale_prior=outputscale_prior)
+    return base_kernel
 
 
 def _kernel_initialization_target(train_Y):  # noqa: ANN201, ANN001
@@ -312,6 +362,8 @@ def _build_covariance_module(
         return gpytorch.kernels.ScaleKernel(
             gpytorch.kernels.ProductKernel(*product_kernels)
         )
+    if spec.group_composition == CompositionType.NONE:
+        raise ValueError("Multiple feature groups require explicit combination semantics; composition=none is invalid.")
     return gpytorch.kernels.AdditiveKernel(*cast(list[Any], group_kernels))
 
 
@@ -447,20 +499,28 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
         covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
         mean_module = _build_mean_module(spec, input_size=full_X.shape[-1])
         likelihood = _build_likelihood(spec, train_Y=full_Y, model_class=spec.model_class)
+        outcome_transform = Standardize(m=full_Y.shape[-1]) if spec.execution.outcome_standardization else None
         model = botorch.models.SingleTaskGP(
             train_X=full_X,
             train_Y=full_Y,
             covar_module=covar_module,
             likelihood=likelihood,
             mean_module=mean_module,
-            outcome_transform=Standardize(m=full_Y.shape[-1]),
+            outcome_transform=outcome_transform,
         )
 
     elif spec.model_class == ModelClass.MULTI_TASK_GP:
         if spec.task_feature_index is None:
             raise ValueError("MultiTaskGP requires task_feature_index.")
+        if spec.task_values is None:
+            raise ValueError("MultiTaskGP requires explicit task_values.")
         rank = spec.multitask_rank if spec.multitask_rank is not None else 1
-        task_values = sorted({int(value) for value in train_X[:, spec.task_feature_index].long().tolist()})
+        observed_task_values = sorted({int(value) for value in train_X[:, spec.task_feature_index].long().tolist()})
+        task_values = sorted(spec.task_values)
+        if observed_task_values != task_values:
+            raise ValueError(
+                f"Observed task values {observed_task_values} do not match declared task_values {task_values}."
+            )
         covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
         mean_module = _build_multitask_mean_module(
             spec,
@@ -492,13 +552,14 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
             covar_module = _build_covariance_module(spec, feature_index_map, full_X, output_train_Y)
             mean_module = _build_mean_module(spec, input_size=full_X.shape[-1], output_index=output_idx)
             likelihood = _build_likelihood(spec, train_Y=output_train_Y, model_class=ModelClass.SINGLE_TASK_GP)
+            outcome_transform = Standardize(m=1) if spec.execution.outcome_standardization else None
             single_model = botorch.models.SingleTaskGP(
                 train_X=full_X,
                 train_Y=output_train_Y,
                 covar_module=covar_module,
                 likelihood=likelihood,
                 mean_module=mean_module,
-                outcome_transform=Standardize(m=1),
+                outcome_transform=outcome_transform,
             )
             individual_models.append(single_model)
         model = botorch.models.ModelListGP(*individual_models)
@@ -541,15 +602,21 @@ def _build_likelihood(
         multitask_likelihood = _build_multitask_default_likelihood(
             num_tasks=num_tasks,
             task_feature_index=task_feature_index,
+            noise_prior=_build_gpytorch_prior(spec.noise.prior),
         )
         if multitask_likelihood is not None:
             return multitask_likelihood
         return None
 
-    return gpytorch.likelihoods.GaussianLikelihood()
+    return gpytorch.likelihoods.GaussianLikelihood(noise_prior=_build_gpytorch_prior(spec.noise.prior))
 
 
-def _build_multitask_default_likelihood(*, num_tasks: int | None, task_feature_index: int | None):  # noqa: ANN201
+def _build_multitask_default_likelihood(
+    *,
+    num_tasks: int | None,
+    task_feature_index: int | None,
+    noise_prior=None,  # noqa: ANN001
+):  # noqa: ANN201
     """Build the documented default multitask likelihood when available.
 
     Falls back to ``None`` when the installed dependency stack does not expose
@@ -564,15 +631,14 @@ def _build_multitask_default_likelihood(*, num_tasks: int | None, task_feature_i
     from gpytorch.priors.torch_priors import LogNormalPrior
     from gpytorch.likelihoods.hadamard_gaussian_likelihood import HadamardGaussianLikelihood
 
-
-    noise_prior = LogNormalPrior(loc=-4.0, scale=1.0)
+    resolved_noise_prior = noise_prior or LogNormalPrior(loc=-4.0, scale=1.0)
     return HadamardGaussianLikelihood(
         num_tasks=num_tasks,
         batch_shape=torch.Size(),
-        noise_prior=noise_prior,
+        noise_prior=resolved_noise_prior,
         noise_constraint=GreaterThan(
             MIN_INFERRED_NOISE_LEVEL,
-            initial_value=noise_prior.mode,
+            initial_value=resolved_noise_prior.mode,
         ),
         task_feature_index=task_feature_index,
     )

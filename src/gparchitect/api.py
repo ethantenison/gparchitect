@@ -80,14 +80,28 @@ def run_gparchitect(
     Returns:
         A tuple of (model_or_None, ExperimentLog). The model is None if all attempts fail.
     """
-    data_bundle: DataBundle = prepare_data(dataframe, input_columns, output_columns, task_column)
+    input_dim = len(input_columns) + (1 if task_column is not None else 0)
+    output_dim = len(output_columns)
+    task_feature_index = len(input_columns) if task_column is not None else None
+    task_values = None
+    if task_column is not None and task_column in dataframe.columns:
+        task_values = sorted({int(value) for value in dataframe[task_column].tolist()})
 
     spec: GPSpec = translate_to_dsl(
         instruction=instruction,
-        input_dim=data_bundle.input_dim,
-        output_dim=data_bundle.output_dim,
-        task_feature_index=data_bundle.task_feature_index,
+        input_dim=input_dim,
+        output_dim=output_dim,
+        task_feature_index=task_feature_index,
+        task_values=task_values,
         input_feature_names=input_columns,
+    )
+
+    data_bundle: DataBundle = prepare_data(
+        dataframe,
+        input_columns,
+        output_columns,
+        task_column,
+        scale_inputs=spec.execution.input_scaling,
     )
 
     experiment_log = ExperimentLog(

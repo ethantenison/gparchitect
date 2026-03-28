@@ -8,6 +8,7 @@ import pytest
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
@@ -16,12 +17,23 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
     PriorSpec,
     SpectralMixtureInitialization,
 )
 
 
 class TestPriorSpec:
+    def test_distribution_is_typed_enum(self) -> None:
+        prior = PriorSpec(distribution=PriorDistribution.NORMAL)
+        assert prior.distribution == PriorDistribution.NORMAL
+
+    def test_additional_supported_distributions_are_typed(self) -> None:
+        half_cauchy = PriorSpec(distribution=PriorDistribution.HALF_CAUCHY, params={"scale": 1.0})
+        uniform = PriorSpec(distribution=PriorDistribution.UNIFORM, params={"a": 0.0, "b": 1.0})
+        assert half_cauchy.distribution == PriorDistribution.HALF_CAUCHY
+        assert uniform.distribution == PriorDistribution.UNIFORM
+
     def test_default_params_is_empty_dict(self) -> None:
         prior = PriorSpec(distribution="Normal")
         assert prior.params == {}
@@ -158,7 +170,9 @@ class TestGPSpec:
         assert spec.mean is None
         assert spec.output_means == {}
         assert spec.task_feature_index is None
+        assert spec.task_values is None
         assert spec.multitask_rank is None
+        assert spec.execution == ExecutionSpec()
 
     def test_full_spec(self) -> None:
         spec = GPSpec(
@@ -172,12 +186,14 @@ class TestGPSpec:
             ],
             noise=NoiseSpec(fixed=False),
             input_dim=3,
-            output_dim=2,
+            output_dim=1,
             task_feature_index=2,
+            task_values=[0, 1],
             multitask_rank=1,
         )
         assert spec.model_class == ModelClass.MULTI_TASK_GP
         assert spec.task_feature_index == 2
+        assert spec.task_values == [0, 1]
         assert len(spec.feature_groups) == 1
 
     def test_json_round_trip(self) -> None:
@@ -209,6 +225,22 @@ class TestGPSpec:
         data = json.loads(spec.model_dump_json())
         assert data["output_means"]["0"]["mean_type"] == "Constant"
         assert data["output_means"]["1"]["mean_type"] == "Linear"
+
+    def test_task_values_serialize(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.MULTI_TASK_GP,
+            output_dim=1,
+            task_feature_index=2,
+            task_values=[0, 1],
+        )
+        data = json.loads(spec.model_dump_json())
+        assert data["task_values"] == [0, 1]
+
+    def test_execution_spec_serializes(self) -> None:
+        spec = GPSpec(execution=ExecutionSpec(input_scaling=False, outcome_standardization=False))
+        data = json.loads(spec.model_dump_json())
+        assert data["execution"]["input_scaling"] is False
+        assert data["execution"]["outcome_standardization"] is False
 
     def test_description_field(self) -> None:
         spec = GPSpec(description="Test spec")

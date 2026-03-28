@@ -38,6 +38,8 @@ from gparchitect.dsl.schema import (
     GPSpec,
     KernelType,
     ModelClass,
+    PriorDistribution,
+    PriorSpec,
     SpectralMixtureInitialization,
 )
 
@@ -46,6 +48,28 @@ logger = logging.getLogger(__name__)
 _PERIODIC_ONLY_KERNELS = {KernelType.PERIODIC}
 _MULTITASK_MODELS = {ModelClass.MULTI_TASK_GP}
 _MODEL_LIST_MODELS = {ModelClass.MODEL_LIST_GP}
+_SUPPORTED_PRIOR_DISTRIBUTIONS = {
+    PriorDistribution.NORMAL,
+    PriorDistribution.LOG_NORMAL,
+    PriorDistribution.GAMMA,
+    PriorDistribution.HALF_CAUCHY,
+    PriorDistribution.UNIFORM,
+}
+_REQUIRED_PRIOR_PARAMS = {
+    PriorDistribution.NORMAL: {"loc", "scale"},
+    PriorDistribution.LOG_NORMAL: {"loc", "scale"},
+    PriorDistribution.GAMMA: {"concentration", "rate"},
+    PriorDistribution.HALF_CAUCHY: {"scale"},
+    PriorDistribution.UNIFORM: {"a", "b"},
+}
+_LENGTHSCALE_PRIOR_KERNELS = {
+    KernelType.RBF,
+    KernelType.RQ,
+    KernelType.MATERN_12,
+    KernelType.MATERN_32,
+    KernelType.MATERN_52,
+    KernelType.PERIODIC,
+}
 
 
 @dataclass
@@ -90,6 +114,7 @@ def validate_dsl(spec: GPSpec) -> ValidationResult:
     _check_model_class_consistency(spec, result)
     _check_mean_spec(spec, result)
     _check_noise(spec, result)
+    _check_execution(spec, result)
     _check_priors(spec, result)
 
     if result.is_valid:
@@ -150,10 +175,10 @@ def _check_feature_groups(spec: GPSpec, result: ValidationResult) -> None:
 
         _check_kernel_spec(group.name, group.kernel, len(group.feature_indices), result)
 
-    # Warn when feature groups use an unsupported composition type
     if len(spec.feature_groups) > 1 and spec.group_composition == CompositionType.NONE:
-        result.warnings.append(
-            "Multiple feature groups with composition=none; group kernels will not be combined."
+        result.errors.append(
+            "Multiple feature groups require additive, multiplicative, or hierarchical composition; "
+            "composition=none is only valid for a single feature group."
         )
 
 
@@ -237,10 +262,21 @@ def _check_model_class_consistency(spec: GPSpec, result: ValidationResult) -> No
     if spec.model_class in _MULTITASK_MODELS:
         if spec.task_feature_index is None:
             result.errors.append("MultiTaskGP requires task_feature_index to be set.")
+        if spec.task_values is None:
+            result.errors.append("MultiTaskGP requires explicit task_values.")
+        if spec.output_dim != 1:
+            result.errors.append(
+                f"MultiTaskGP currently supports long-format training data with output_dim=1, got {spec.output_dim}."
+            )
         if spec.multitask_rank is not None and spec.multitask_rank < 1:
             result.errors.append(f"multitask_rank must be >= 1, got {spec.multitask_rank}.")
-        if spec.output_dim < 2:
-            result.warnings.append("MultiTaskGP with output_dim=1 is unusual; consider SingleTaskGP.")
+        if spec.task_values is not None:
+            if not spec.task_values:
+                result.errors.append("MultiTaskGP task_values must not be empty when provided.")
+            if any(task_value < 0 for task_value in spec.task_values):
+                result.errors.append("MultiTaskGP task_values must all be >= 0.")
+            if len(set(spec.task_values)) != len(spec.task_values):
+                result.errors.append("MultiTaskGP task_values must be unique.")
 
     elif spec.model_class in _MODEL_LIST_MODELS:
         if spec.output_dim < 2:
@@ -252,6 +288,9 @@ def _check_model_class_consistency(spec: GPSpec, result: ValidationResult) -> No
                 "task_feature_index is set but model_class is SingleTaskGP; "
                 "the task column will be ignored."
             )
+
+    if spec.model_class != ModelClass.MULTI_TASK_GP and spec.task_values is not None:
+        result.errors.append("task_values may only be set for MultiTaskGP.")
 
 
 def _check_mean_spec(spec: GPSpec, result: ValidationResult) -> None:
@@ -266,9 +305,17 @@ def _check_mean_spec(spec: GPSpec, result: ValidationResult) -> None:
                 )
 
     if spec.model_class == ModelClass.MULTI_TASK_GP:
+        if spec.output_means and spec.task_values is None:
+            result.errors.append(
+                "MultiTaskGP targeted output_means require explicit task_values so the validator can check task scope."
+            )
         for task_index in spec.output_means:
             if task_index < 0:
                 result.errors.append(f"MultiTaskGP output_means task index must be >= 0, got {task_index}.")
+            elif spec.task_values is not None and task_index not in spec.task_values:
+                result.errors.append(
+                    f"MultiTaskGP output_means task index {task_index} is not declared in task_values."
+                )
 
 
 def _check_noise(spec: GPSpec, result: ValidationResult) -> None:
@@ -276,18 +323,74 @@ def _check_noise(spec: GPSpec, result: ValidationResult) -> None:
         result.errors.append("noise.fixed=True but noise.noise_value is None; a value must be provided.")
     if spec.noise.noise_value is not None and spec.noise.noise_value < 0:
         result.errors.append(f"noise.noise_value must be non-negative, got {spec.noise.noise_value}.")
+    if spec.noise.fixed and spec.noise.prior is not None:
+        result.errors.append("noise.prior is not supported when noise.fixed=True.")
+
+
+def _check_execution(spec: GPSpec, result: ValidationResult) -> None:
+    if spec.model_class == ModelClass.MULTI_TASK_GP and spec.execution.outcome_standardization:
+        result.errors.append("MultiTaskGP does not support outcome_standardization in the current contract.")
 
 
 def _check_priors(spec: GPSpec, result: ValidationResult) -> None:
     for group in spec.feature_groups:
-        kernel = group.kernel
-        if kernel.lengthscale_prior and not kernel.lengthscale_prior.distribution:
+        _check_kernel_priors(group.name, group.kernel, result)
+
+    if spec.noise.prior is not None:
+        _check_prior_spec("noise.prior", spec.noise.prior, result)
+
+
+def _check_prior_spec(location: str, prior: PriorSpec, result: ValidationResult) -> None:
+    if not prior.distribution:
+        result.errors.append(f"{location} has no distribution name.")
+        return
+    if prior.distribution not in _SUPPORTED_PRIOR_DISTRIBUTIONS:
+        supported = ", ".join(sorted(_SUPPORTED_PRIOR_DISTRIBUTIONS))
+        result.errors.append(
+            f"{location} uses unsupported distribution '{prior.distribution}'. Supported distributions: {supported}."
+        )
+        return
+
+    missing_params = sorted(_REQUIRED_PRIOR_PARAMS[prior.distribution] - set(prior.params))
+    if missing_params:
+        result.errors.append(
+            f"{location} is missing required parameters for {prior.distribution}: {', '.join(missing_params)}."
+        )
+
+
+def _check_kernel_priors(group_name: str, kernel, result: ValidationResult) -> None:  # noqa: ANN001
+    if kernel.lengthscale_prior is not None:
+        _check_prior_spec(f"Feature group '{group_name}': lengthscale_prior", kernel.lengthscale_prior, result)
+        if kernel.children:
             result.errors.append(
-                f"Feature group '{group.name}': lengthscale_prior has no distribution name."
+                f"Feature group '{group_name}': lengthscale_prior is only supported on leaf kernels."
             )
-        if kernel.outputscale_prior and not kernel.outputscale_prior.distribution:
+        elif kernel.kernel_type not in _LENGTHSCALE_PRIOR_KERNELS:
             result.errors.append(
-                f"Feature group '{group.name}': outputscale_prior has no distribution name."
+                f"Feature group '{group_name}': lengthscale_prior is not supported for {kernel.kernel_type.value}."
             )
-        if spec.noise.prior and not spec.noise.prior.distribution:
-            result.errors.append("noise.prior has no distribution name.")
+
+    if kernel.outputscale_prior is not None:
+        _check_prior_spec(f"Feature group '{group_name}': outputscale_prior", kernel.outputscale_prior, result)
+        if kernel.children:
+            result.errors.append(
+                f"Feature group '{group_name}': outputscale_prior is only supported on leaf kernels."
+            )
+        elif kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
+            result.errors.append(
+                f"Feature group '{group_name}': outputscale_prior is not supported for SpectralMixture."
+            )
+
+    if kernel.period_prior is not None:
+        _check_prior_spec(f"Feature group '{group_name}': period_prior", kernel.period_prior, result)
+        if kernel.children:
+            result.errors.append(
+                f"Feature group '{group_name}': period_prior is only supported on leaf kernels."
+            )
+        elif kernel.kernel_type != KernelType.PERIODIC:
+            result.errors.append(
+                f"Feature group '{group_name}': period_prior is only supported for Periodic kernels."
+            )
+
+    for child in kernel.children:
+        _check_kernel_priors(group_name, child, result)
