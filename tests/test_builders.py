@@ -20,6 +20,7 @@ from gparchitect.dsl.schema import (
     MeanSpec,
     ModelClass,
     NoiseSpec,
+    PriorDistribution,
     PriorSpec,
 )
 
@@ -479,7 +480,7 @@ class TestBuildModelMocked:
         model = build_model_from_dsl(spec, train_X, train_Y)
 
         assert isinstance(model, SingleTaskGP)
-        assert not hasattr(model, "outcome_transform")
+        assert getattr(model, "outcome_transform", None) is None
 
     def test_invalid_model_class_raises(self) -> None:
         try:
@@ -526,13 +527,13 @@ class TestBuildModelMocked:
         spec.feature_groups[0].kernel = KernelSpec(
             kernel_type=KernelType.PERIODIC,
             ard=True,
-            lengthscale_prior=PriorSpec(distribution="Normal", params={"loc": 0.0, "scale": 1.0}),
-            outputscale_prior=PriorSpec(distribution="Gamma", params={"concentration": 2.0, "rate": 0.5}),
-            period_prior=PriorSpec(distribution="LogNormal", params={"loc": 0.0, "scale": 1.0}),
+            lengthscale_prior=PriorSpec(distribution=PriorDistribution.NORMAL, params={"loc": 0.0, "scale": 1.0}),
+            outputscale_prior=PriorSpec(distribution=PriorDistribution.GAMMA, params={"concentration": 2.0, "rate": 0.5}),
+            period_prior=PriorSpec(distribution=PriorDistribution.LOG_NORMAL, params={"loc": 0.0, "scale": 1.0}),
         )
         spec.noise = NoiseSpec(
             fixed=False,
-            prior=PriorSpec(distribution="Gamma", params={"concentration": 3.0, "rate": 1.5}),
+            prior=PriorSpec(distribution=PriorDistribution.GAMMA, params={"concentration": 3.0, "rate": 1.5}),
         )
 
         train_X = torch.zeros(5, 2, dtype=torch.double)
@@ -557,12 +558,12 @@ class TestBuildModelMocked:
         spec.feature_groups[0].kernel = KernelSpec(
             kernel_type=KernelType.PERIODIC,
             ard=True,
-            lengthscale_prior=PriorSpec(distribution="HalfCauchy", params={"scale": 0.75}),
-            period_prior=PriorSpec(distribution="Uniform", params={"a": 0.1, "b": 2.0}),
+            lengthscale_prior=PriorSpec(distribution=PriorDistribution.HALF_CAUCHY, params={"scale": 0.75}),
+            period_prior=PriorSpec(distribution=PriorDistribution.UNIFORM, params={"a": 0.1, "b": 2.0}),
         )
         spec.noise = NoiseSpec(
             fixed=False,
-            prior=PriorSpec(distribution="HalfCauchy", params={"scale": 0.2}),
+            prior=PriorSpec(distribution=PriorDistribution.HALF_CAUCHY, params={"scale": 0.2}),
         )
 
         train_X = torch.zeros(5, 2, dtype=torch.double)

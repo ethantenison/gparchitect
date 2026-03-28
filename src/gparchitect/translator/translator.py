@@ -184,13 +184,6 @@ _ARD_SUPPORTED_KERNELS = {
     KernelType.MATERN_52,
     KernelType.PERIODIC,
 }
-_PRIOR_DISTRIBUTION_MAP = {
-    "normal": PriorDistribution.NORMAL,
-    "lognormal": PriorDistribution.LOG_NORMAL,
-    "gamma": PriorDistribution.GAMMA,
-    "halfcauchy": PriorDistribution.HALF_CAUCHY,
-    "uniform": PriorDistribution.UNIFORM,
-}
 _PRIOR_PARAM_PATTERNS: dict[PriorDistribution, dict[str, re.Pattern[str]]] = {
     PriorDistribution.NORMAL: {
         "loc": re.compile(r"\b(?:loc|mean|mu)\s*(?:=|of)?\s*(-?[0-9]*\.?[0-9]+)\b", re.IGNORECASE),
