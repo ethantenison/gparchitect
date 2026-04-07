@@ -1,0 +1,3420 @@
+final_knowledge_base:
+  objects:
+    - object_type: kernel
+      canonical_name: RBF
+      aliases:
+        - SquaredExponential
+        - GaussianKernel
+        - SE
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.RBFKernel
+        botorch_usage:
+          - covar_module for SingleTaskGP
+          - covar_module for independent submodels inside ModelListGP
+          - data_covar_module for MultiTaskGP
+        gparchitect_schema_mapping:
+          kernel_type: RBF
+          schema_fields:
+            required:
+              - kernel_type
+            optional:
+              - ard
+              - lengthscale_prior
+              - outputscale_prior
+              - composition
+              - children
+      required_args:
+        - kernel_type=RBF
+      optional_args:
+        - ard
+        - lengthscale_prior
+        - outputscale_prior
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        independent_multi_output: supported
+        batched_models: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - additive
+        - multiplicative
+        - hierarchical
+        - none
+      mathematical_role:
+        - stationary covariance
+        - infinitely differentiable smoothness prior
+        - distance-based similarity with exponential quadratic decay
+      modeling_assumptions:
+        - latent function is very smooth
+        - nearby inputs should have rapidly increasing covariance as distance shrinks
+        - stationarity is acceptable
+        - no abrupt local roughness dominates
+      observable_evidence_for_use:
+        data_patterns:
+          - smooth response curves
+          - stable interpolation between nearby points
+          - no visible cusps or sharp kinks
+        domain_language_cues:
+          - smooth relationship
+          - gradual change
+          - slowly varying surface
+        experimental_signals:
+          - dense sampling over continuous covariates
+          - standardized inputs with moderate signal-to-noise ratio
+        example_user_statements:
+          - "the response changes smoothly with temperature"
+          - "adjacent dates should behave similarly without abrupt jumps"
+      exclusion_rules:
+        anti_patterns:
+          - sharp regime changes
+          - rough local behavior
+          - discontinuities
+          - clear multi-scale structure handled better by RQ or additive kernels
+        invalid_conditions:
+          - nonstationary trend dominates and no mean/trend term included
+          - periodic structure is primary signal
+        diagnostic_failures:
+          - over-smoothing peaks or troughs
+          - posterior mean misses local variation while intervals remain narrow
+          - learned lengthscale collapses to very small values to compensate for roughness
+      hyperparameter_semantics:
+        - parameter: lengthscale
+          meaning: characteristic distance over which correlation decays
+          effect_if_increased: smoother function, longer-range dependence, less local adaptation
+          effect_if_decreased: more local variation, faster covariance decay, risk of fitting noise
+        - parameter: outputscale
+          meaning: marginal signal variance
+          effect_if_increased: larger function amplitude and posterior variance
+          effect_if_decreased: flatter latent function with more variation attributed to noise
+        - parameter: ard
+          meaning: separate lengthscale per active input dimension
+          effect_if_increased: more feature-specific flexibility and relevance separation
+          effect_if_decreased: shared smoothness assumption across dimensions
+      interaction_effects:
+        kernels:
+          - periodic_times_rbf yields smooth repeating structure
+          - additive_with_linear separates global trend from local smooth residual
+        means:
+          - constant mean suitable when level offset exists
+          - linear mean reduces misuse of RBF for deterministic trend
+        priors:
+          - informative lengthscale prior is valuable in low-data smooth domains
+        multitask:
+          - task correlation can share smooth structure across tasks in MultiTaskGP
+        normalization:
+          - strong dependence on normalized inputs for interpretable lengthscale
+      composition_patterns:
+        - pattern: additive_rbf_blocks
+          description: separate smooth effects by feature group
+          when_to_use:
+            - semantically distinct smooth covariate blocks
+          when_not_to_use:
+            - dominant cross-feature interaction is required
+        - pattern: periodic_times_rbf
+          description: smooth seasonal structure with slowly varying within-cycle behavior
+          when_to_use:
+            - recurring cycles with smooth deviations
+          when_not_to_use:
+            - no repeated period evidence
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - ModelListGP
+          - MultiTaskGP
+        why:
+          - kernel choice is agnostic to family and primarily encodes within-input smoothness
+        constraints:
+          - for MultiTaskGP requires explicit task column and task_values in GPArchitect
+      diagnostics_and_revision_rules:
+        checks:
+          - compare residual autocorrelation after fit
+          - inspect fitted lengthscale relative to scaled input range
+          - compare NLPD/MSLL against Matern52 baseline
+        failure_symptoms:
+          - persistent structured residuals
+          - poor uncertainty calibration around local structure
+          - excessive smoothness in posterior samples
+        fixes:
+          - switch to Matern32 or Matern12 for rougher latent functions
+          - add linear mean if trend is being absorbed by kernel
+          - use additive decomposition if multiple mechanisms are present
+      decision_triggers:
+        IF THEN:
+          - IF domain says smooth gradual variation AND no stronger periodic or discontinuous evidence THEN consider RBF
+          - IF residuals after linear mean remain smooth THEN prefer RBF over rougher Matern
+        counterfactual_checks:
+          - IF replacing RBF with Matern32 materially improves predictive density THEN RBF smoothness assumption was too strong
+          - IF adding periodic term materially improves fit THEN pure RBF was incomplete
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - choosing RBF over Matern52 from language alone is heuristic until residual diagnostics confirm
+      citations:
+        - https://gaussianprocess.org/gpml/chapters/RW.pdf
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use for very smooth stationary functions
+        - reject when discontinuity, roughness, or dominant periodicity is present
+      schema_ready_example:
+        kernel_type: RBF
+        ard: true
+        lengthscale_prior:
+          distribution: LogNormal
+          params:
+            loc: 0.0
+            scale: 0.5
+
+    - object_type: kernel
+      canonical_name: Matern52
+      aliases:
+        - Matern_nu_2p5
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.MaternKernel(nu=2.5)
+        botorch_usage:
+          - covar_module for SingleTaskGP
+          - covar_module for independent submodels inside ModelListGP
+          - data_covar_module for MultiTaskGP
+        gparchitect_schema_mapping:
+          kernel_type: Matern52
+          schema_fields:
+            required:
+              - kernel_type
+            optional:
+              - ard
+              - lengthscale_prior
+              - outputscale_prior
+              - composition
+              - children
+      required_args:
+        - kernel_type=Matern52
+      optional_args:
+        - ard
+        - lengthscale_prior
+        - outputscale_prior
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        independent_multi_output: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - additive
+        - multiplicative
+        - hierarchical
+        - none
+      mathematical_role:
+        - stationary covariance
+        - moderately smooth latent prior
+        - rougher alternative to RBF
+      modeling_assumptions:
+        - latent function is smooth but not infinitely differentiable
+        - stationarity is acceptable
+        - local irregularity may exist without true discontinuity
+      observable_evidence_for_use:
+        data_patterns:
+          - smooth signal with occasional sharper local bends
+          - RBF baseline appears slightly over-smoothed
+        domain_language_cues:
+          - smooth but flexible
+          - not perfectly smooth
+          - moderate local variation
+        experimental_signals:
+          - medium data regime
+          - exact smoothness unknown
+        example_user_statements:
+          - "the response is smooth overall but can bend locally"
+          - "I want a safer default than the squared exponential"
+      exclusion_rules:
+        anti_patterns:
+          - true periodicity as dominant mechanism
+          - abrupt discontinuities
+          - extremely smooth physical law with dense data favoring RBF
+        invalid_conditions:
+          - strong deterministic trend omitted from mean
+        diagnostic_failures:
+          - residuals still show underfit local variation
+          - posterior remains too smooth at sharp transitions
+      hyperparameter_semantics:
+        - parameter: lengthscale
+          meaning: correlation decay scale
+          effect_if_increased: smoother posterior, broader sharing
+          effect_if_decreased: more local flexibility, higher noise-fitting risk
+        - parameter: outputscale
+          meaning: signal variance
+          effect_if_increased: larger latent amplitude
+          effect_if_decreased: flatter latent function
+        - parameter: ard
+          meaning: per-dimension lengthscales
+          effect_if_increased: variable-specific smoothness
+          effect_if_decreased: shared smoothness across active dimensions
+      interaction_effects:
+        kernels:
+          - additive with linear mean handles trend plus residual
+          - multiplicative composition captures smooth interactions
+        means:
+          - constant mean for centered targets
+          - linear mean when directional drift exists
+        priors:
+          - useful low-data default with informative lengthscale prior
+        multitask:
+          - reasonable shared kernel for correlated tasks
+        normalization:
+          - input scaling required for interpretable lengthscales
+      composition_patterns:
+        - pattern: linear_plus_matern52
+          description: global trend with flexible residual smoothness
+          when_to_use:
+            - monotonic or directional baseline plus local departures
+          when_not_to_use:
+            - no trend component
+        - pattern: additive_feature_blocks
+          description: independent mechanisms across blocks
+          when_to_use:
+            - separable feature groups
+          when_not_to_use:
+            - dominant interaction effect
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - ModelListGP
+          - MultiTaskGP
+        why:
+          - safe default stationary kernel across exact GP families
+        constraints:
+          - MultiTaskGP still requires long-format task setup
+      diagnostics_and_revision_rules:
+        checks:
+          - compare predictive density against RBF and Matern32
+          - inspect residual roughness
+          - inspect learned lengthscales for collapse
+        failure_symptoms:
+          - still over-smooths local transitions
+          - underfits repeating structure
+        fixes:
+          - move to Matern32 or Matern12 for rougher residuals
+          - add periodic kernel when cycles exist
+          - add linear mean for omitted trend
+      decision_triggers:
+        IF THEN:
+          - IF smoothness is expected but infinite differentiability is too strong THEN prefer Matern52
+          - IF no strong evidence separates RBF from rougher Matern options THEN default to Matern52
+        counterfactual_checks:
+          - IF RBF clearly improves predictive density without calibration loss THEN smoothness may be higher than assumed
+          - IF Matern32 materially improves fit on local bends THEN Matern52 is still too smooth
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - using Matern52 as a default fallback is heuristic but common
+      citations:
+        - https://gaussianprocess.org/gpml/chapters/RW.pdf
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - default stationary kernel when smoothness is uncertain
+        - reject when discontinuity or dominant periodicity is primary
+      schema_ready_example:
+        kernel_type: Matern52
+        ard: true
+
+    - object_type: kernel
+      canonical_name: Matern32
+      aliases:
+        - Matern_nu_1p5
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.MaternKernel(nu=1.5)
+        botorch_usage:
+          - covar_module for SingleTaskGP
+          - covar_module for ModelListGP submodels
+          - data_covar_module for MultiTaskGP
+        gparchitect_schema_mapping:
+          kernel_type: Matern32
+          schema_fields:
+            required:
+              - kernel_type
+            optional:
+              - ard
+              - lengthscale_prior
+              - outputscale_prior
+      required_args:
+        - kernel_type=Matern32
+      optional_args:
+        - ard
+        - lengthscale_prior
+        - outputscale_prior
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        independent_multi_output: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - additive
+        - multiplicative
+        - hierarchical
+        - none
+      mathematical_role:
+        - stationary covariance
+        - rougher smooth prior than Matern52
+      modeling_assumptions:
+        - function is continuous with noticeable local roughness
+        - stationarity remains acceptable
+      observable_evidence_for_use:
+        data_patterns:
+          - sharper turns than Matern52 can capture well
+          - residuals still structured under smoother kernels
+        domain_language_cues:
+          - rough but continuous
+          - irregular local behavior
+        experimental_signals:
+          - moderate sample density with local bends
+        example_user_statements:
+          - "there are sharper local changes but not hard jumps"
+      exclusion_rules:
+        anti_patterns:
+          - true discontinuities
+          - dominant periodic structure
+          - extremely smooth physics-like relation
+        invalid_conditions:
+          - omitted deterministic trend
+        diagnostic_failures:
+          - still underfits sharp local behavior
+          - uncertainty remains miscalibrated near transition regions
+      hyperparameter_semantics:
+        - parameter: lengthscale
+          meaning: locality scale
+          effect_if_increased: smoother posterior
+          effect_if_decreased: more local variation
+        - parameter: outputscale
+          meaning: signal amplitude
+          effect_if_increased: larger deviations
+          effect_if_decreased: flatter latent response
+        - parameter: ard
+          meaning: per-feature roughness control
+          effect_if_increased: separate local scales by feature
+          effect_if_decreased: common scale
+      interaction_effects:
+        kernels:
+          - useful in additive residual blocks
+          - multiplicative use if interactions are smooth but rougher than RBF
+        means:
+          - pair with linear mean when trend exists
+        priors:
+          - informative lengthscale prior helpful in low-data roughness settings
+        multitask:
+          - can be shared across correlated tasks if roughness is common
+        normalization:
+          - scaled inputs improve comparability of learned local scales
+      composition_patterns:
+        - pattern: linear_plus_matern32
+          description: directional baseline with rough residual
+          when_to_use:
+            - monotonic trend plus local irregularity
+          when_not_to_use:
+            - no trend
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - kernel-level choice independent of family
+        constraints:
+          - exact family choice still depends on output coupling
+      diagnostics_and_revision_rules:
+        checks:
+          - compare to Matern52 and Matern12 by NLPD/MSLL
+          - inspect residual roughness
+        failure_symptoms:
+          - underfitting persists near steep local changes
+          - posterior variance too narrow where signal turns abruptly
+        fixes:
+          - move to Matern12 for rougher process
+          - segment regimes if changes are discontinuous
+          - add periodic component if oscillation remains
+      decision_triggers:
+        IF THEN:
+          - IF function appears rougher than Matern52 but continuous THEN choose Matern32
+        counterfactual_checks:
+          - IF Matern12 clearly improves calibration near local turns THEN Matern32 is still too smooth
+          - IF Matern52 performs equally well with better stability THEN prefer smoother simpler prior
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - roughness assessment from language alone is heuristic
+      citations:
+        - https://gaussianprocess.org/gpml/chapters/RW.pdf
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use for continuous functions with noticeable local roughness
+        - reject for discontinuities or dominant periodicity
+      schema_ready_example:
+        kernel_type: Matern32
+        ard: true
+
+    - object_type: kernel
+      canonical_name: Matern12
+      aliases:
+        - ExponentialKernel
+        - Matern_nu_0p5
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.MaternKernel(nu=0.5)
+        botorch_usage:
+          - covar_module for SingleTaskGP
+          - covar_module for ModelListGP submodels
+          - data_covar_module for MultiTaskGP
+        gparchitect_schema_mapping:
+          kernel_type: Matern12
+          schema_fields:
+            required:
+              - kernel_type
+            optional:
+              - ard
+              - lengthscale_prior
+              - outputscale_prior
+      required_args:
+        - kernel_type=Matern12
+      optional_args:
+        - ard
+        - lengthscale_prior
+        - outputscale_prior
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        independent_multi_output: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - additive
+        - multiplicative
+        - hierarchical
+        - none
+      mathematical_role:
+        - stationary covariance
+        - continuous but non-differentiable rough latent prior
+      modeling_assumptions:
+        - function may change sharply while remaining continuous
+        - stationarity is acceptable
+      observable_evidence_for_use:
+        data_patterns:
+          - frequent local kinks
+          - smoother kernels underfit visibly
+        domain_language_cues:
+          - rough
+          - jagged
+          - sharp local changes
+        experimental_signals:
+          - repeated underfit under RBF and Matern52
+        example_user_statements:
+          - "the curve is continuous but pretty jagged"
+      exclusion_rules:
+        anti_patterns:
+          - true discontinuities
+          - periodic dominant signal
+          - very smooth scientific relation
+        invalid_conditions:
+          - strong global trend omitted from mean
+        diagnostic_failures:
+          - still fails around actual change-points
+          - learned very short lengthscale with unstable fit
+      hyperparameter_semantics:
+        - parameter: lengthscale
+          meaning: locality radius under rough prior
+          effect_if_increased: smoother, broader dependence
+          effect_if_decreased: highly local roughness, stronger overfit risk
+        - parameter: outputscale
+          meaning: signal amplitude
+          effect_if_increased: larger fluctuations
+          effect_if_decreased: flatter latent variation
+        - parameter: ard
+          meaning: feature-specific roughness scales
+          effect_if_increased: separate local scales per input
+          effect_if_decreased: one shared local scale
+      interaction_effects:
+        kernels:
+          - useful fallback for rough residual block
+        means:
+          - often pair with linear mean if drift exists
+        priors:
+          - strong lengthscale prior helpful to prevent noise mimicry
+        multitask:
+          - only if roughness shared and outputs correlated
+        normalization:
+          - essential because very small lengthscales can be unstable on unscaled inputs
+      composition_patterns:
+        - pattern: linear_plus_matern12
+          description: trend plus rough residual
+          when_to_use:
+            - rough local deviations around global trend
+          when_not_to_use:
+            - discontinuous regime break
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - roughness is kernel choice, not family choice
+        constraints:
+          - still exact Gaussian regression contract only
+      diagnostics_and_revision_rules:
+        checks:
+          - compare against regime segmentation baseline
+          - inspect posterior intervals near sharp changes
+        failure_symptoms:
+          - underfit at true change-points
+          - unstable tiny lengthscales
+        fixes:
+          - segment regimes
+          - introduce explicit regime covariate
+          - move to separate models if structural break dominates
+      decision_triggers:
+        IF THEN:
+          - IF continuity is plausible but differentiability is not THEN use Matern12
+        counterfactual_checks:
+          - IF piecewise modeling or segmentation improves sharply THEN kernel roughness was not the main issue
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - distinguishing rough continuity from discontinuity requires diagnostics
+      citations:
+        - https://gaussianprocess.org/gpml/chapters/RW.pdf
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - rough continuous fallback
+        - do not use as a substitute for true change-point modeling
+      schema_ready_example:
+        kernel_type: Matern12
+        ard: true
+
+    - object_type: kernel
+      canonical_name: Periodic
+      aliases:
+        - ExpSineSquared_like
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.PeriodicKernel
+        botorch_usage:
+          - covar_module for SingleTaskGP
+          - covar_module for ModelListGP submodels
+          - data_covar_module for MultiTaskGP
+        gparchitect_schema_mapping:
+          kernel_type: Periodic
+          schema_fields:
+            required:
+              - kernel_type
+            optional:
+              - ard
+              - lengthscale_prior
+              - outputscale_prior
+              - period_prior
+              - period_length
+      required_args:
+        - kernel_type=Periodic
+      optional_args:
+        - ard
+        - period_prior
+        - period_length
+        - lengthscale_prior
+        - outputscale_prior
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - additive
+        - multiplicative
+        - hierarchical
+        - none
+      mathematical_role:
+        - stationary periodic covariance
+        - enforces repeating structure at fixed period
+      modeling_assumptions:
+        - latent behavior repeats with stable period
+        - recurrence is stronger than one-off autocorrelation
+      observable_evidence_for_use:
+        data_patterns:
+          - repeated peaks and troughs at regular intervals
+          - autocorrelation peaks at fixed lag
+        domain_language_cues:
+          - seasonal
+          - cyclic
+          - weekly pattern
+          - annual cycle
+        experimental_signals:
+          - explicit time or phase variable available
+          - known calendar or machine cycle
+        example_user_statements:
+          - "there is weekly seasonality"
+          - "behavior repeats every 12 months"
+      exclusion_rules:
+        anti_patterns:
+          - quasi-periodic with drifting period and no smooth envelope term
+          - one-off events misread as cycles
+          - no time/phase variable
+        invalid_conditions:
+          - unknown or weakly identifiable period with sparse coverage
+        diagnostic_failures:
+          - learned period inconsistent across fits
+          - residuals show trend or amplitude drift after fit
+      hyperparameter_semantics:
+        - parameter: period_length
+          meaning: repeat interval
+          effect_if_increased: longer cycle
+          effect_if_decreased: shorter cycle
+        - parameter: lengthscale
+          meaning: smoothness within a cycle
+          effect_if_increased: smoother repeating waveform
+          effect_if_decreased: sharper within-cycle variation
+        - parameter: outputscale
+          meaning: amplitude of periodic component
+          effect_if_increased: stronger oscillation
+          effect_if_decreased: weaker oscillation
+      interaction_effects:
+        kernels:
+          - Periodic x RBF captures smooth repeating patterns with local coherence
+          - Periodic + RBF captures periodic plus nonperiodic residual structure
+        means:
+          - constant mean common
+          - linear mean if trend coexists
+        priors:
+          - period prior useful when cycle known
+        multitask:
+          - shared periodic base can be coupled across tasks
+        normalization:
+          - period_length must correspond to scaled coordinate system if input scaling applied to time
+      composition_patterns:
+        - pattern: periodic_times_rbf
+          description: locally smooth repeating pattern
+          when_to_use:
+            - stable cycle with smooth perturbation
+          when_not_to_use:
+            - no stable cycle
+        - pattern: periodic_plus_trend
+          description: repeating signal around deterministic drift
+          when_to_use:
+            - seasonality plus trend
+          when_not_to_use:
+            - no trend
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - ModelListGP
+          - MultiTaskGP
+        why:
+          - periodicity is within-output structure and does not determine output family
+        constraints:
+          - requires meaningful time/phase input
+      diagnostics_and_revision_rules:
+        checks:
+          - verify learned period against known cycle
+          - inspect residual autocorrelation after fit
+          - compare additive vs multiplicative periodic compositions
+        failure_symptoms:
+          - unstable estimated period
+          - residual drift or amplitude modulation
+        fixes:
+          - add RBF residual term
+          - add linear mean for trend
+          - remove periodic kernel if recurrence unsupported
+      decision_triggers:
+        IF THEN:
+          - IF explicit recurring cycle is stated or observed THEN include Periodic kernel
+        counterfactual_checks:
+          - IF nonperiodic kernel matches or exceeds predictive density with simpler structure THEN periodicity claim is weak
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - inferring exact period from text without metadata is heuristic
+      citations:
+        - https://gaussianprocess.org/gpml/chapters/RW.pdf
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use only with stable repeat interval evidence
+        - pair with RBF or mean term when trend or drift exists
+      schema_ready_example:
+        kernel_type: Periodic
+        ard: false
+        period_length: 12.0
+
+    - object_type: kernel
+      canonical_name: RQ
+      aliases:
+        - RationalQuadratic
+        - scale_mixture_rbf
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.RQKernel
+        botorch_usage:
+          - covar_module for SingleTaskGP
+          - covar_module for ModelListGP submodels
+          - data_covar_module for MultiTaskGP
+        gparchitect_schema_mapping:
+          kernel_type: RQ
+          schema_fields:
+            required:
+              - kernel_type
+            optional:
+              - ard
+              - rq_alpha
+              - lengthscale_prior
+              - outputscale_prior
+      required_args:
+        - kernel_type=RQ
+      optional_args:
+        - ard
+        - rq_alpha
+        - lengthscale_prior
+        - outputscale_prior
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - additive
+        - multiplicative
+        - hierarchical
+        - none
+      mathematical_role:
+        - stationary covariance
+        - scale mixture of RBF-like behavior
+      modeling_assumptions:
+        - latent function may contain multiple characteristic smoothness scales
+        - stationarity remains acceptable
+      observable_evidence_for_use:
+        data_patterns:
+          - long-range trend-like variation plus local departures within same process
+          - single-scale kernels alternate between oversmoothing and undersmoothing
+        domain_language_cues:
+          - multi-scale
+          - long-term and short-term variation
+          - varying length scales
+        experimental_signals:
+          - enough data to identify multiple scales
+        example_user_statements:
+          - "there is both slow drift and local wiggle"
+      exclusion_rules:
+        anti_patterns:
+          - periodic recurrence misread as multi-scale smoothness
+          - low-data setting with no evidence for added flexibility
+        invalid_conditions:
+          - dominant nonstationarity requiring mean structure
+        diagnostic_failures:
+          - alpha becomes weakly identified
+          - no improvement over simpler RBF/Matern baselines
+      hyperparameter_semantics:
+        - parameter: lengthscale
+          meaning: base locality scale
+          effect_if_increased: smoother overall response
+          effect_if_decreased: more local variation
+        - parameter: rq_alpha
+          meaning: controls heaviness of scale mixture
+          effect_if_increased: approaches RBF-like behavior
+          effect_if_decreased: stronger multi-scale behavior
+        - parameter: outputscale
+          meaning: signal variance
+          effect_if_increased: larger amplitude
+          effect_if_decreased: smaller amplitude
+      interaction_effects:
+        kernels:
+          - alternative to explicit additive multi-scale decomposition
+        means:
+          - linear mean still needed when deterministic trend present
+        priors:
+          - alpha prior not exposed in GPArchitect; rq_alpha is initializer only
+        multitask:
+          - usable if shared multi-scale latent behavior across tasks
+        normalization:
+          - input scaling important to make lengthscale interpretable
+      composition_patterns:
+        - pattern: rq_single_process
+          description: one kernel capturing mixed local/global scales
+          when_to_use:
+            - multi-scale latent structure without need for interpretable decomposition
+          when_not_to_use:
+            - need explicit separate components
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - multi-scale within-output structure independent of output family
+        constraints:
+          - GPArchitect exposes rq_alpha initialization, not explicit alpha prior target
+      diagnostics_and_revision_rules:
+        checks:
+          - compare against additive decomposition and RBF/Matern baselines
+          - monitor stability of rq_alpha across restarts
+        failure_symptoms:
+          - negligible gain over simpler kernels
+          - unstable alpha estimates
+        fixes:
+          - revert to Matern52 or RBF
+          - use additive components if interpretability needed
+      decision_triggers:
+        IF THEN:
+          - IF one process appears to mix short- and long-range smoothness THEN consider RQ
+        counterfactual_checks:
+          - IF additive decomposition yields similar or better performance with clearer interpretation THEN prefer additive model
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - deciding RQ versus additive decomposition is heuristic without ablation
+      citations:
+        - https://gaussianprocess.org/gpml/chapters/RW.pdf
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use for single-process multi-scale smoothness
+        - reject when extra flexibility is unsupported
+      schema_ready_example:
+        kernel_type: RQ
+        ard: true
+        rq_alpha: 0.8
+
+    - object_type: kernel
+      canonical_name: Linear
+      aliases:
+        - DotProduct
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.LinearKernel
+        botorch_usage:
+          - covar_module term for SingleTaskGP
+          - covar_module term for ModelListGP submodels
+          - data_covar_module term for MultiTaskGP
+        gparchitect_schema_mapping:
+          kernel_type: Linear
+          schema_fields:
+            required:
+              - kernel_type
+            optional:
+              - outputscale_prior
+      required_args:
+        - kernel_type=Linear
+      optional_args:
+        - outputscale_prior
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - additive
+        - multiplicative
+        - hierarchical
+        - none
+      mathematical_role:
+        - covariance over linear functions
+        - linear residual or interaction component
+      modeling_assumptions:
+        - signal can be expressed with linear similarity in active dimensions
+      observable_evidence_for_use:
+        data_patterns:
+          - approximately linear response surface
+          - residual after linear detrending is weak
+        domain_language_cues:
+          - proportional
+          - linear effect
+          - straight-line relationship
+        experimental_signals:
+          - theory supports linear dependence
+        example_user_statements:
+          - "output changes roughly proportionally with input"
+      exclusion_rules:
+        anti_patterns:
+          - strong nonlinear residual remaining
+          - periodic or local smooth behavior dominates
+        invalid_conditions:
+          - forcing linear kernel to absorb nonlinear mechanism
+        diagnostic_failures:
+          - structured residuals remain after fit
+          - poor calibration in curved regions
+      hyperparameter_semantics:
+        - parameter: outputscale
+          meaning: variance of linear component
+          effect_if_increased: stronger linear amplitude
+          effect_if_decreased: weaker linear contribution
+      interaction_effects:
+        kernels:
+          - additive with RBF/Matern for trend-plus-residual structure
+          - multiplicative with other kernels can impose input-dependent linear modulation
+        means:
+          - often redundant with linear mean if used alone
+        priors:
+          - outputscale prior helps in low-data settings
+        multitask:
+          - can share linear component across tasks if coupled
+        normalization:
+          - centered/scaled inputs improve interpretation
+      composition_patterns:
+        - pattern: linear_plus_smooth
+          description: deterministic direction plus nonlinear residual
+          when_to_use:
+            - monotonic trend with residual structure
+          when_not_to_use:
+            - no trend
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - ModelListGP
+          - MultiTaskGP
+        why:
+          - linearity is within-output structure only
+        constraints:
+          - often better represented as linear mean than linear kernel when deterministic
+      diagnostics_and_revision_rules:
+        checks:
+          - residual plots after fit
+          - compare against linear mean + smooth kernel
+        failure_symptoms:
+          - linear term absorbs little variance
+          - structured residual autocorrelation remains
+        fixes:
+          - move trend into mean
+          - add smooth residual kernel
+      decision_triggers:
+        IF THEN:
+          - IF theory indicates proportional relationship AND residual nonlinear structure is limited THEN consider Linear term
+        counterfactual_checks:
+          - IF linear mean plus smooth residual outperforms linear kernel alone THEN do not use pure linear kernel
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - mean-vs-kernel placement is partly heuristic and should be validated
+      citations:
+        - https://gaussianprocess.org/gpml/chapters/RW.pdf
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use for linear structure or as additive trend component
+        - do not use as a substitute for nonlinear residual modeling
+      schema_ready_example:
+        kernel_type: Linear
+
+    - object_type: prior
+      canonical_name: LogNormal
+      aliases:
+        - log_normal_prior
+      implementation_mapping:
+        gpytorch_class: gpytorch.priors.torch_priors.LogNormalPrior
+        botorch_usage:
+          - prior attached to kernel lengthscale
+          - prior attached to kernel outputscale
+          - prior attached to noise
+        gparchitect_schema_mapping:
+          distribution: LogNormal
+          schema_fields:
+            required:
+              - distribution
+              - params.loc
+              - params.scale
+      required_args:
+        - distribution=LogNormal
+        - params.loc
+        - params.scale
+      optional_args: []
+      supported_contexts:
+        kernel_lengthscale: supported
+        kernel_outputscale: supported
+        noise: supported
+      composition_compatibility:
+        - all kernel compositions through attached parameter target
+      mathematical_role:
+        - positive-support prior over scale parameters
+      modeling_assumptions:
+        - parameter should be strictly positive
+        - uncertainty is multiplicative/log-scale natural
+      observable_evidence_for_use:
+        data_patterns:
+          - low-data regime needing regularization
+          - scale parameter expected to vary over orders of magnitude
+        domain_language_cues:
+          - positive scale
+          - uncertain by factor
+          - order-of-magnitude prior
+        experimental_signals:
+          - normalized inputs and explicit expected scale range
+        example_user_statements:
+          - "lengthscale should be around 1 on a multiplicative scale"
+      exclusion_rules:
+        anti_patterns:
+          - parameters that can be negative
+          - no idea of scale and highly sensitive loc/scale choice
+        invalid_conditions:
+          - prior mean set far outside scaled feature range without justification
+        diagnostic_failures:
+          - posterior pinned at boundary induced by miscentered prior
+          - optimizer unable to escape implausible initial basin
+      hyperparameter_semantics:
+        - parameter: loc
+          meaning: mean in log space
+          effect_if_increased: shifts mass to larger positive values
+          effect_if_decreased: shifts mass to smaller positive values
+        - parameter: scale
+          meaning: dispersion in log space
+          effect_if_increased: weaker regularization and broader positive support
+          effect_if_decreased: stronger concentration around exp(loc)
+      interaction_effects:
+        kernels:
+          - natural for lengthscale priors on smooth stationary kernels
+        means:
+          - indirect only through residual allocation
+        priors:
+          - combines with informative noise prior to stabilize low-data exact GP
+        multitask:
+          - shared kernel hyperparameters benefit from regularized scale priors
+        normalization:
+          - strongest when inputs are scaled so loc has interpretable meaning
+      composition_patterns:
+        - pattern: low_data_scale_regularization
+          description: regularize positive hyperparameters in low-data models
+          when_to_use:
+            - few observations
+            - defensible scale belief
+          when_not_to_use:
+            - no basis for scale center
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - prior supports all exact model families
+        constraints:
+          - only usable on supported parameter slots in GPArchitect
+      diagnostics_and_revision_rules:
+        checks:
+          - compare posterior parameter values to prior center
+          - sensitivity analysis across loc/scale settings
+        failure_symptoms:
+          - posterior dominated by prior
+          - fit degrades sharply with slight prior changes
+        fixes:
+          - widen scale
+          - recenter loc after scaling review
+          - remove prior if unsupported by evidence
+      decision_triggers:
+        IF THEN:
+          - IF parameter must be positive AND belief is naturally multiplicative THEN choose LogNormal prior
+        counterfactual_checks:
+          - IF Gamma prior produces more stable optimization with same substantive belief THEN prefer Gamma
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - parameter center choice depends on preprocessing and domain calibration
+      citations:
+        - https://docs.gpytorch.ai/en/stable/examples/00_Basic_Usage/Hyperparameters.html
+        - https://docs.gpytorch.ai/en/stable/kernels.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - positive-scale regularizer for lengthscale/outputscale/noise
+        - only use when log-scale belief is defensible
+      schema_ready_example:
+        distribution: LogNormal
+        params:
+          loc: 0.0
+          scale: 0.5
+
+    - object_type: prior
+      canonical_name: Gamma
+      aliases:
+        - gamma_prior
+      implementation_mapping:
+        gpytorch_class: gpytorch.priors.torch_priors.GammaPrior
+        botorch_usage:
+          - prior attached to kernel lengthscale
+          - prior attached to kernel outputscale
+          - prior attached to noise
+        gparchitect_schema_mapping:
+          distribution: Gamma
+          schema_fields:
+            required:
+              - distribution
+              - params.concentration
+              - params.rate
+      required_args:
+        - distribution=Gamma
+        - params.concentration
+        - params.rate
+      optional_args: []
+      supported_contexts:
+        kernel_lengthscale: supported
+        kernel_outputscale: supported
+        noise: supported
+      composition_compatibility:
+        - all supported parameter placements
+      mathematical_role:
+        - positive-support prior with tunable skew
+      modeling_assumptions:
+        - parameter strictly positive
+        - belief easier to encode via mean/skew than log-normal interpretation
+      observable_evidence_for_use:
+        data_patterns:
+          - low-data model needing positivity and shrinkage
+        domain_language_cues:
+          - positive but uncertain
+          - skewed belief toward smaller values
+        experimental_signals:
+          - prior elicitation in terms of expected positive magnitude
+        example_user_statements:
+          - "noise should be positive and usually small"
+      exclusion_rules:
+        anti_patterns:
+          - negative-capable parameters
+          - arbitrary concentration/rate with no scale interpretation
+        invalid_conditions:
+          - extreme concentration/rate causing near-deterministic prior without evidence
+        diagnostic_failures:
+          - posterior stuck near tiny or huge values due to overly sharp prior
+      hyperparameter_semantics:
+        - parameter: concentration
+          meaning: shape of positive prior
+          effect_if_increased: more concentration and less skew
+          effect_if_decreased: heavier mass near zero with more skew
+        - parameter: rate
+          meaning: inverse scale control
+          effect_if_increased: shifts mass toward smaller values
+          effect_if_decreased: shifts mass toward larger values
+      interaction_effects:
+        kernels:
+          - common for noise and lengthscale regularization
+        means:
+          - indirect only
+        priors:
+          - alternative to LogNormal for positive scale control
+        multitask:
+          - useful when shared latent parameters need stronger shrinkage
+        normalization:
+          - parameter interpretation depends on scaled input/output conventions
+      composition_patterns:
+        - pattern: shrinkage_positive_scale
+          description: shrink positive hyperparameters away from implausibly large values
+          when_to_use:
+            - low-data exact GP
+          when_not_to_use:
+            - no substantive calibration
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - parameter prior independent of model family
+        constraints:
+          - only attached to GPArchitect-supported parameter slots
+      diagnostics_and_revision_rules:
+        checks:
+          - posterior-prior conflict assessment
+          - parameter sensitivity under mild hyperprior changes
+        failure_symptoms:
+          - optimizer collapses to zero-like scales
+          - prior overwhelms data likelihood
+        fixes:
+          - lower concentration sharpness
+          - recalibrate rate
+          - switch to LogNormal if multiplicative belief is clearer
+      decision_triggers:
+        IF THEN:
+          - IF parameter is positive AND shrinkage toward smaller values is desired THEN consider Gamma prior
+        counterfactual_checks:
+          - IF LogNormal gives more stable fit with same domain belief THEN prefer LogNormal
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - choosing concentration/rate from vague text is heuristic
+      citations:
+        - https://docs.gpytorch.ai/en/stable/examples/00_Basic_Usage/Hyperparameters.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - positive skewable shrinkage prior
+        - reject if parameter calibration is absent
+      schema_ready_example:
+        distribution: Gamma
+        params:
+          concentration: 2.0
+          rate: 1.0
+
+    - object_type: prior
+      canonical_name: Normal
+      aliases:
+        - gaussian_prior
+      implementation_mapping:
+        gpytorch_class: gpytorch.priors.torch_priors.NormalPrior
+        botorch_usage:
+          - prior attached where unconstrained parameterization is meaningful through underlying transform
+        gparchitect_schema_mapping:
+          distribution: Normal
+          schema_fields:
+            required:
+              - distribution
+              - params.loc
+              - params.scale
+      required_args:
+        - distribution=Normal
+        - params.loc
+        - params.scale
+      optional_args: []
+      supported_contexts:
+        kernel_lengthscale: supported_by_contract
+        kernel_outputscale: supported_by_contract
+        noise: supported_by_contract
+      composition_compatibility:
+        - all supported parameter placements
+      mathematical_role:
+        - symmetric prior around location parameter
+      modeling_assumptions:
+        - substantive belief is centered and symmetric in chosen parameterization
+      observable_evidence_for_use:
+        data_patterns:
+          - domain provides symmetric belief around known center
+        domain_language_cues:
+          - around this value
+          - roughly centered here
+        experimental_signals:
+          - prior elicited directly on transformed or approximately symmetric scale
+        example_user_statements:
+          - "lengthscale should be near 0.8 with moderate uncertainty"
+      exclusion_rules:
+        anti_patterns:
+          - naive use on strongly positive skewed scale parameters without checking transformation implications
+        invalid_conditions:
+          - center below zero for parameter effectively constrained positive without justification
+        diagnostic_failures:
+          - induced prior mass conflicts with constraint-transformed parameter support
+      hyperparameter_semantics:
+        - parameter: loc
+          meaning: central prior value
+          effect_if_increased: shifts prior upward
+          effect_if_decreased: shifts prior downward
+        - parameter: scale
+          meaning: spread around loc
+          effect_if_increased: weaker regularization
+          effect_if_decreased: stronger concentration
+      interaction_effects:
+        kernels:
+          - may be acceptable if parameterization assumptions are understood
+        means:
+          - indirect only
+        priors:
+          - often less natural than LogNormal/Gamma for positive hyperparameters
+        multitask:
+          - same caveat across families
+        normalization:
+          - center must be interpreted after scaling
+      composition_patterns:
+        - pattern: symmetric_belief_regularization
+          description: use when substantive symmetric center is known
+          when_to_use:
+            - calibrated center and moderate spread
+          when_not_to_use:
+            - strictly positive skewed scale belief
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - family-agnostic prior attachment
+        constraints:
+          - use cautiously on positive hyperparameters
+      diagnostics_and_revision_rules:
+        checks:
+          - inspect transformed actual parameter posterior
+          - compare with LogNormal/Gamma prior sensitivity
+        failure_symptoms:
+          - implausible boundary behavior
+          - sensitivity to small loc shifts
+        fixes:
+          - switch to LogNormal/Gamma for positive scales
+          - widen scale or recenter loc
+      decision_triggers:
+        IF THEN:
+          - IF prior belief is symmetric around known center in relevant parameterization THEN Normal prior is admissible
+        counterfactual_checks:
+          - IF positivity and skew dominate substantive belief THEN do not use Normal; use LogNormal or Gamma
+      evidence_strength:
+        theoretical: medium
+        empirical_library_support: strong
+        heuristic_elements:
+          - appropriateness for positive GP scales depends on transformed parameter interpretation
+      citations:
+        - https://docs.gpytorch.ai/en/stable/examples/00_Basic_Usage/Hyperparameters.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - only use when symmetric-center belief is defensible
+        - avoid as default positive-scale prior
+      schema_ready_example:
+        distribution: Normal
+        params:
+          loc: 0.0
+          scale: 1.0
+
+    - object_type: prior
+      canonical_name: HalfCauchy
+      aliases:
+        - half_cauchy_prior
+      implementation_mapping:
+        gpytorch_class: gpytorch.priors.torch_priors.HalfCauchyPrior
+        botorch_usage:
+          - prior attached to kernel lengthscale
+          - prior attached to kernel outputscale
+          - prior attached to noise
+        gparchitect_schema_mapping:
+          distribution: HalfCauchy
+          schema_fields:
+            required:
+              - distribution
+              - params.scale
+      required_args:
+        - distribution=HalfCauchy
+        - params.scale
+      optional_args: []
+      supported_contexts:
+        kernel_lengthscale: supported
+        kernel_outputscale: supported
+        noise: supported
+      composition_compatibility:
+        - all supported parameter placements
+      mathematical_role:
+        - heavy-tailed positive-support prior
+      modeling_assumptions:
+        - strong shrinkage near zero with allowance for occasional large values
+      observable_evidence_for_use:
+        data_patterns:
+          - desire to regularize but avoid over-constraining rare large scales
+        domain_language_cues:
+          - mostly small but could be large
+          - weakly informative positive prior
+        experimental_signals:
+          - low-data with concern about prior overconcentration
+        example_user_statements:
+          - "noise is probably small but I don't want to rule out larger values"
+      exclusion_rules:
+        anti_patterns:
+          - when stable concentrated prior is needed
+          - when heavy tails create optimization instability
+        invalid_conditions:
+          - extremely small scale with no justification
+        diagnostic_failures:
+          - hyperparameters drift to very large values with poor calibration
+      hyperparameter_semantics:
+        - parameter: scale
+          meaning: tail and central scale control
+          effect_if_increased: heavier allowance for large parameter values
+          effect_if_decreased: stronger shrinkage toward zero
+      interaction_effects:
+        kernels:
+          - can regularize outputscale/noise while preserving tail freedom
+        means:
+          - indirect only
+        priors:
+          - heavier tailed alternative to Gamma/LogNormal
+        multitask:
+          - may help when shared parameter uncertainty is large
+        normalization:
+          - scale must reflect normalized parameter magnitude
+      composition_patterns:
+        - pattern: weakly_informative_positive_prior
+          description: positive prior with tail robustness
+          when_to_use:
+            - limited certainty about upper range
+          when_not_to_use:
+            - need tight regularization
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - prior usable across families
+        constraints:
+          - potential optimizer sensitivity in exact GP fitting
+      diagnostics_and_revision_rules:
+        checks:
+          - monitor posterior for unrealistic large values
+          - compare with Gamma/LogNormal sensitivity
+        failure_symptoms:
+          - unstable hyperparameter growth
+          - wide posterior uncertainty without predictive gain
+        fixes:
+          - tighten scale
+          - switch to Gamma or LogNormal
+      decision_triggers:
+        IF THEN:
+          - IF positive parameter may occasionally be large AND over-shrinking is risky THEN consider HalfCauchy
+        counterfactual_checks:
+          - IF optimization becomes unstable or posterior is too diffuse THEN replace with Gamma or LogNormal
+      evidence_strength:
+        theoretical: medium
+        empirical_library_support: strong
+        heuristic_elements:
+          - heavy-tail benefit versus instability tradeoff is context dependent
+      citations:
+        - https://docs.gpytorch.ai/en/stable/examples/00_Basic_Usage/Hyperparameters.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - weakly informative heavy-tailed positive prior
+        - reject when tighter regularization is needed
+      schema_ready_example:
+        distribution: HalfCauchy
+        params:
+          scale: 1.0
+
+    - object_type: mean
+      canonical_name: Constant
+      aliases:
+        - intercept_mean
+      implementation_mapping:
+        gpytorch_class: gpytorch.means.ConstantMean
+        botorch_usage:
+          - mean_module in SingleTaskGP
+          - mean_module in ModelListGP submodels
+          - shared or task-specific mean in MultiTaskGP
+        gparchitect_schema_mapping:
+          mean_type: Constant
+          schema_fields:
+            required:
+              - mean_type
+      required_args:
+        - mean_type=Constant
+      optional_args: []
+      supported_contexts:
+        shared_mean: supported
+        output_specific_mean: supported
+        task_specific_mean: supported
+      composition_compatibility:
+        - compatible with all kernel structures
+      mathematical_role:
+        - baseline offset for latent function
+      modeling_assumptions:
+        - target has nonzero baseline level
+        - no deterministic directional trend needs explicit mean term
+      observable_evidence_for_use:
+        data_patterns:
+          - centered residual structure around stable level
+        domain_language_cues:
+          - baseline level
+          - offset
+          - average around constant level
+        experimental_signals:
+          - no clear trend after plotting target against key covariates
+        example_user_statements:
+          - "there is a baseline level plus deviations"
+      exclusion_rules:
+        anti_patterns:
+          - clear monotonic trend
+          - obvious deterministic drift
+        invalid_conditions:
+          - forcing kernel to absorb known trend if constant mean used alone
+        diagnostic_failures:
+          - residual mean varies systematically with input
+      hyperparameter_semantics:
+        - parameter: constant
+          meaning: global intercept
+          effect_if_increased: shifts latent baseline upward
+          effect_if_decreased: shifts latent baseline downward
+      interaction_effects:
+        kernels:
+          - standard companion to stationary kernels
+        means:
+          - mutually exclusive at one placement with other mean types
+        priors:
+          - no explicit prior slot in current GPArchitect mean schema
+        multitask:
+          - can be task-specific via output_means
+        normalization:
+          - outcome standardization can reduce need for explicit constant mean
+      composition_patterns:
+        - pattern: constant_plus_stationary_kernel
+          description: baseline level with structured residual covariance
+          when_to_use:
+            - no deterministic trend
+          when_not_to_use:
+            - strong trend exists
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - baseline choice independent of output family
+        constraints:
+          - task-specific means require task values in multitask settings
+      diagnostics_and_revision_rules:
+        checks:
+          - inspect residual mean against inputs
+          - compare to linear mean by NLPD/MSLL
+        failure_symptoms:
+          - residual trend remains
+        fixes:
+          - switch to Linear mean
+          - retain Constant and add explicit trend features only if justified
+      decision_triggers:
+        IF THEN:
+          - IF no directional trend is evident AND a baseline offset exists THEN choose Constant mean
+        counterfactual_checks:
+          - IF linear mean materially improves predictive density or residual neutrality THEN Constant mean was insufficient
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - whether trend is negligible requires residual inspection
+      citations:
+        - https://github.com/ethantenison/gparchitect/
+        - https://archive.botorch.org/v/0.8.3/api/models.html
+      concise_agent_summary:
+        - baseline offset mean
+        - reject when deterministic trend is visible
+      schema_ready_example:
+        mean_type: Constant
+
+    - object_type: mean
+      canonical_name: Zero
+      aliases:
+        - zero_mean
+      implementation_mapping:
+        gpytorch_class: gpytorch.means.ZeroMean
+        botorch_usage:
+          - mean_module in SingleTaskGP
+          - mean_module in ModelListGP submodels
+          - shared or task-specific mean in MultiTaskGP
+        gparchitect_schema_mapping:
+          mean_type: Zero
+          schema_fields:
+            required:
+              - mean_type
+      required_args:
+        - mean_type=Zero
+      optional_args: []
+      supported_contexts:
+        shared_mean: supported
+        output_specific_mean: supported
+        task_specific_mean: supported
+      composition_compatibility:
+        - compatible with all kernel structures
+      mathematical_role:
+        - assumes latent deviations are centered at zero
+      modeling_assumptions:
+        - target is centered or standardized
+        - no deterministic offset or trend requires explicit mean
+      observable_evidence_for_use:
+        data_patterns:
+          - standardized outputs
+          - centered residual target
+        domain_language_cues:
+          - zero-centered
+          - anomalies around zero
+        experimental_signals:
+          - outcome standardization enabled
+        example_user_statements:
+          - "model deviations around zero"
+      exclusion_rules:
+        anti_patterns:
+          - known nonzero baseline
+          - deterministic trend
+        invalid_conditions:
+          - raw target with large offset not standardized
+        diagnostic_failures:
+          - posterior mean systematically biased high or low
+      hyperparameter_semantics: []
+      interaction_effects:
+        kernels:
+          - common with outcome-standardized SingleTaskGP
+        means:
+          - simplest mean choice when standardization handles centering
+        priors:
+          - no mean prior slot in current contract
+        multitask:
+          - can be task-specific for centered task residuals
+        normalization:
+          - strongest fit when outcome standardization is on
+      composition_patterns:
+        - pattern: standardized_zero_mean_gp
+          description: center target via transform, let covariance explain deviations
+          when_to_use:
+            - outcome standardization enabled
+          when_not_to_use:
+            - raw offset/trend remains
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - ModelListGP
+          - MultiTaskGP
+        why:
+          - mean centering choice independent of family
+        constraints:
+          - centered outputs required for defensibility
+      diagnostics_and_revision_rules:
+        checks:
+          - inspect posterior mean bias
+          - compare to Constant mean if output not standardized
+        failure_symptoms:
+          - systematic underprediction or overprediction
+        fixes:
+          - switch to Constant mean
+          - enable or verify outcome standardization
+      decision_triggers:
+        IF THEN:
+          - IF target is standardized or naturally centered at zero THEN choose Zero mean
+        counterfactual_checks:
+          - IF Constant mean reduces bias without harming calibration THEN Zero mean was too restrictive
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - centeredness assumption depends on preprocessing
+      citations:
+        - https://github.com/ethantenison/gparchitect/
+        - https://archive.botorch.org/v/0.8.3/api/models.html
+      concise_agent_summary:
+        - use with centered outputs
+        - reject for raw offset or trend-laden targets
+      schema_ready_example:
+        mean_type: Zero
+
+    - object_type: mean
+      canonical_name: Linear
+      aliases:
+        - linear_mean
+      implementation_mapping:
+        gpytorch_class: gpytorch.means.LinearMean
+        botorch_usage:
+          - mean_module in SingleTaskGP
+          - mean_module in ModelListGP submodels
+          - shared or task-specific mean in MultiTaskGP
+        gparchitect_schema_mapping:
+          mean_type: Linear
+          schema_fields:
+            required:
+              - mean_type
+      required_args:
+        - mean_type=Linear
+      optional_args: []
+      supported_contexts:
+        shared_mean: supported
+        output_specific_mean: supported
+        task_specific_mean: supported
+      composition_compatibility:
+        - compatible with all kernel structures
+      mathematical_role:
+        - deterministic linear trend component
+      modeling_assumptions:
+        - at least part of the signal is approximately linear in active inputs
+        - kernel should focus on residual structure rather than absorbing trend
+      observable_evidence_for_use:
+        data_patterns:
+          - monotonic or approximately linear drift
+          - residual structure remains after line fit
+        domain_language_cues:
+          - trend
+          - drift
+          - slope
+          - monotonic
+        experimental_signals:
+          - directional effect consistently visible across range
+        example_user_statements:
+          - "there is an upward trend plus local deviations"
+      exclusion_rules:
+        anti_patterns:
+          - strongly nonlinear deterministic mean
+          - no discernible directional trend
+        invalid_conditions:
+          - using linear mean to encode strict monotonicity guarantee
+        diagnostic_failures:
+          - residual curvature remains substantial
+          - fit improves only when kernel compensates for misfit mean
+      hyperparameter_semantics:
+        - parameter: weights
+          meaning: linear effect per input dimension
+          effect_if_increased: stronger positive trend in corresponding dimension
+          effect_if_decreased: weaker or negative trend
+        - parameter: bias
+          meaning: intercept term
+          effect_if_increased: higher baseline
+          effect_if_decreased: lower baseline
+      interaction_effects:
+        kernels:
+          - pairs well with stationary residual kernels
+        means:
+          - preferred over constant/zero when directional trend exists
+        priors:
+          - no explicit mean prior slot in current contract
+        multitask:
+          - task-specific linear means possible through output_means
+        normalization:
+          - min-max scaling changes interpretation of weights but improves stability
+      composition_patterns:
+        - pattern: linear_mean_plus_smooth_residual
+          description: deterministic trend separated from GP residual
+          when_to_use:
+            - monotonic trend with local structure
+          when_not_to_use:
+            - no directional signal
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - mean structure independent of output-family choice
+        constraints:
+          - task-specific overrides require explicit task_values for MultiTaskGP
+      diagnostics_and_revision_rules:
+        checks:
+          - residuals versus key trend covariate
+          - compare to Constant mean baseline
+        failure_symptoms:
+          - residual trend remains
+          - posterior mean misses curvature due to overly rigid mean
+        fixes:
+          - keep linear mean and adjust kernel
+          - revert to Constant if trend not supported
+      decision_triggers:
+        IF THEN:
+          - IF domain language indicates monotonic trend or drift THEN choose Linear mean before complicating kernel
+        counterfactual_checks:
+          - IF Constant mean plus smooth kernel performs equally well THEN deterministic trend assumption may be unnecessary
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - mapping monotonic language to linear mean is approximate, not a strict monotonic constraint
+      citations:
+        - https://github.com/ethantenison/gparchitect/
+        - https://archive.botorch.org/v/0.8.3/api/models.html
+      concise_agent_summary:
+        - use for directional trend, then model residuals with kernel
+        - reject when nonlinear mean dominates
+      schema_ready_example:
+        mean_type: Linear
+
+    - object_type: model_family
+      canonical_name: SingleTaskGP
+      aliases:
+        - exact_single_output_gp
+      implementation_mapping:
+        gpytorch_class: botorch.models.SingleTaskGP
+        botorch_usage:
+          - exact GP regression for one output
+        gparchitect_schema_mapping:
+          model_class: SingleTaskGP
+          schema_fields:
+            required:
+              - model_class
+              - feature_groups
+              - input_dim
+              - output_dim
+            optional:
+              - mean
+              - noise
+              - execution
+              - group_composition
+      required_args:
+        - model_class=SingleTaskGP
+      optional_args:
+        - mean
+        - noise
+        - execution
+        - group_composition
+      supported_contexts:
+        output_dim: single preferred
+        multi_output: possible only via separate models, not as one SingleTaskGP object
+      composition_compatibility:
+        - all supported kernel compositions
+      mathematical_role:
+        - exact GP regression for a single target
+      modeling_assumptions:
+        - one output is modeled at a time
+        - exact Gaussian regression likelihood is adequate
+      observable_evidence_for_use:
+        data_patterns:
+          - single target variable
+        domain_language_cues:
+          - one response
+          - one outcome
+        experimental_signals:
+          - no need for cross-output borrowing
+        example_user_statements:
+          - "predict one continuous target"
+      exclusion_rules:
+        anti_patterns:
+          - multiple correlated outputs needing shared statistical strength
+        invalid_conditions:
+          - user expects one model object to capture cross-output covariance
+        diagnostic_failures:
+          - sparse related tasks remain poorly estimated despite known coupling
+      hyperparameter_semantics:
+        - parameter: outcome_standardization
+          meaning: whether BoTorch standardizes target during fitting
+          effect_if_increased: more stable exact GP fitting for scalar outputs
+          effect_if_decreased: preserves raw-scale fitting
+      interaction_effects:
+        kernels:
+          - supports any GPArchitect kernel/feature-group composition
+        means:
+          - supports shared mean
+        priors:
+          - supports GPArchitect prior placements
+        multitask:
+          - no cross-output covariance
+        normalization:
+          - input scaling and outcome standardization commonly enabled
+      composition_patterns:
+        - pattern: single_output_exact_gp
+          description: default exact GP for one continuous target
+          when_to_use:
+            - one output
+          when_not_to_use:
+            - multiple outputs with desired shared strength
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+        why:
+          - minimal exact GP family for scalar response
+        constraints:
+          - no output coupling
+      diagnostics_and_revision_rules:
+        checks:
+          - residual diagnostics
+          - calibration metrics
+          - ablate kernel/mean choices
+        failure_symptoms:
+          - structured residuals
+          - poor calibration
+        fixes:
+          - revise kernel, mean, priors, or data preprocessing
+      decision_triggers:
+        IF THEN:
+          - IF output_dim == 1 THEN choose SingleTaskGP unless exact contract is violated
+        counterfactual_checks:
+          - IF multiple related outputs exist and separate fits waste information THEN reconsider family and route to MultiTaskGP or ModelListGP
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements: []
+      citations:
+        - https://archive.botorch.org/v/0.8.3/api/models.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - default exact family for one continuous target
+        - reject only when output coupling is required
+      schema_ready_example:
+        model_class: SingleTaskGP
+        input_dim: 2
+        output_dim: 1
+        feature_groups:
+          - name: all_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+
+    - object_type: model_family
+      canonical_name: MultiTaskGP
+      aliases:
+        - exact_correlated_task_gp
+      implementation_mapping:
+        gpytorch_class: botorch.models.MultiTaskGP
+        botorch_usage:
+          - exact multitask GP with long-format task indicator
+        gparchitect_schema_mapping:
+          model_class: MultiTaskGP
+          schema_fields:
+            required:
+              - model_class
+              - feature_groups
+              - input_dim
+              - output_dim
+              - task_feature_index
+              - task_values
+            optional:
+              - multitask_rank
+              - mean
+              - output_means
+              - noise
+              - execution
+              - group_composition
+      required_args:
+        - model_class=MultiTaskGP
+        - task_feature_index
+        - task_values
+      optional_args:
+        - multitask_rank
+        - output_means
+        - mean
+        - noise
+      supported_contexts:
+        correlated_tasks: preferred
+        long_format_task_indicator: required
+      composition_compatibility:
+        - all supported kernel compositions on non-task features
+      mathematical_role:
+        - exact GP with learned inter-task covariance
+      modeling_assumptions:
+        - outputs/tasks share latent structure worth borrowing
+        - data can be represented in long format with task indicator
+        - cross-task dependence is non-negligible
+      observable_evidence_for_use:
+        data_patterns:
+          - related outputs with shared dynamics
+          - some tasks data-poor, others richer
+        domain_language_cues:
+          - tasks are related
+          - machines behave similarly
+          - outputs are correlated
+        experimental_signals:
+          - aligned or overlapping inputs across tasks
+          - task indicator available
+        example_user_statements:
+          - "different machines behave similarly"
+          - "the outputs are correlated and one task has little data"
+      exclusion_rules:
+        anti_patterns:
+          - semantically unrelated outputs
+          - outputs with disjoint noncomparable input support
+        invalid_conditions:
+          - missing task indicator
+          - task_values unspecified or inconsistent with observed data
+        diagnostic_failures:
+          - multitask fit gives no gain over independent baselines
+          - inferred coupling harms calibration for some tasks
+      hyperparameter_semantics:
+        - parameter: multitask_rank
+          meaning: rank of inter-task covariance
+          effect_if_increased: richer task correlation structure
+          effect_if_decreased: simpler shared structure, stronger regularization
+      interaction_effects:
+        kernels:
+          - shared data kernel across tasks
+        means:
+          - shared or task-specific means available
+        priors:
+          - regularization more important when rank or data scarcity increases
+        multitask:
+          - core family mechanism is output correlation
+        normalization:
+          - input scaling still applies to continuous features
+      composition_patterns:
+        - pattern: correlated_multitask_exact_gp
+          description: exact multitask model with shared latent structure
+          when_to_use:
+            - related tasks and long-format data
+          when_not_to_use:
+            - independent outputs
+      model_routing_implications:
+        suggests:
+          - MultiTaskGP
+        why:
+          - only supported exact family in GPArchitect that models cross-task covariance directly
+        constraints:
+          - requires explicit task column and task_values
+          - current GPArchitect support is long-format with one observed output column
+      diagnostics_and_revision_rules:
+        checks:
+          - compare against ModelListGP or independent baselines
+          - inspect per-task calibration
+          - inspect effect of multitask_rank
+        failure_symptoms:
+          - negative transfer across tasks
+          - no predictive-density gain
+          - task mismatch errors during build
+        fixes:
+          - reduce multitask_rank
+          - switch to ModelListGP if dependence is weak
+          - verify task encoding and task_values
+      decision_triggers:
+        IF THEN:
+          - IF outputs are correlated AND share inputs/support AND long-format task indicator exists THEN choose MultiTaskGP
+        counterfactual_checks:
+          - IF independent models perform as well or better AND borrowing strength is not helping THEN do not use MultiTaskGP
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - practical value of shared strength must be confirmed by comparison to independent baselines
+      citations:
+        - https://archive.botorch.org/v/0.8.3/api/models.html
+        - https://github.com/ethantenison/gparchitect/
+        - https://docs.gpytorch.ai/en/stable/examples/03_Multitask_Exact_GPs/index.html
+      concise_agent_summary:
+        - use only when related tasks and long-format task encoding exist
+        - reject when outputs are independent or task encoding absent
+      schema_ready_example:
+        model_class: MultiTaskGP
+        input_dim: 3
+        output_dim: 1
+        task_feature_index: 2
+        task_values:
+          - 0
+          - 1
+        multitask_rank: 1
+        feature_groups:
+          - name: shared_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+
+    - object_type: model_family
+      canonical_name: ModelListGP
+      aliases:
+        - independent_model_container
+        - independent_multi_output_container
+      implementation_mapping:
+        gpytorch_class: botorch.models.ModelListGP
+        botorch_usage:
+          - container of independent SingleTaskGP-like submodels
+        gparchitect_schema_mapping:
+          model_class: ModelListGP
+          schema_fields:
+            required:
+              - model_class
+              - input_dim
+              - output_dim
+            optional:
+              - feature_groups
+              - mean
+              - output_means
+              - noise
+              - execution
+              - group_composition
+      required_args:
+        - model_class=ModelListGP
+      optional_args:
+        - feature_groups
+        - output_means
+        - mean
+        - noise
+      supported_contexts:
+        independent_outputs: preferred
+        output_specific_means: supported
+      composition_compatibility:
+        - all supported kernel compositions within each submodel
+      mathematical_role:
+        - independent exact GP per output wrapped in one container
+      modeling_assumptions:
+        - outputs do not require shared covariance
+        - per-output modeling flexibility is needed
+      observable_evidence_for_use:
+        data_patterns:
+          - multiple outputs with weak or absent correlation
+          - outputs differ in mean structure or feature relevance
+        domain_language_cues:
+          - model outputs separately
+          - no shared correlation
+          - each target is different
+        experimental_signals:
+          - multi-output task but no justified borrowing
+        example_user_statements:
+          - "each output should be modeled separately"
+      exclusion_rules:
+        anti_patterns:
+          - related tasks where borrowing strength matters
+        invalid_conditions:
+          - user expects direct cross-output covariance learning
+        diagnostic_failures:
+          - underperformance on sparse outputs that could benefit from multitask sharing
+      hyperparameter_semantics:
+        - parameter: output_means
+          meaning: mean override per independent submodel
+          effect_if_increased: more output-specific mean flexibility
+          effect_if_decreased: more shared mean behavior
+      interaction_effects:
+        kernels:
+          - each output can reuse shared feature-group spec or separate internal configuration
+        means:
+          - output-specific means naturally supported
+        priors:
+          - per-submodel regularization available through shared schema pattern
+        multitask:
+          - no direct output covariance
+        normalization:
+          - single-task outcome standardization applied per submodel where supported
+      composition_patterns:
+        - pattern: independent_multi_output_exact_models
+          description: separate exact GPs in one container
+          when_to_use:
+            - multiple outputs without coupling
+          when_not_to_use:
+            - clear cross-output dependence
+      model_routing_implications:
+        suggests:
+          - ModelListGP
+        why:
+          - preferred GPArchitect family for multiple outputs when independence is desired
+        constraints:
+          - no shared output covariance
+      diagnostics_and_revision_rules:
+        checks:
+          - compare against MultiTaskGP if correlation is suspected
+          - inspect output-specific residuals
+        failure_symptoms:
+          - data-poor outputs remain weak while related rich outputs exist
+        fixes:
+          - switch to MultiTaskGP if shared structure justified
+          - refine output-specific means/kernels
+      decision_triggers:
+        IF THEN:
+          - IF output_dim > 1 AND outputs are effectively independent OR require output-specific structures THEN choose ModelListGP
+        counterfactual_checks:
+          - IF correlated multitask model yields clear predictive-density gain and better sparse-task performance THEN ModelListGP is too independent
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - independence claim should be checked empirically where possible
+      citations:
+        - https://archive.botorch.org/v/0.8.3/api/models.html
+        - https://github.com/ethantenison/gparchitect/
+        - https://docs.gpytorch.ai/en/stable/examples/03_Multitask_Exact_GPs/ModelList_GP_Regression.html
+      concise_agent_summary:
+        - use for multiple outputs without shared covariance
+        - reject when related tasks can borrow strength
+      schema_ready_example:
+        model_class: ModelListGP
+        input_dim: 2
+        output_dim: 2
+        mean:
+          mean_type: Constant
+        output_means:
+          1:
+            mean_type: Linear
+        feature_groups:
+          - name: shared_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+
+    - object_type: composition_pattern
+      canonical_name: additive
+      aliases:
+        - sum_kernel
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.AdditiveKernel
+        botorch_usage:
+          - covar_module composition in all exact families
+        gparchitect_schema_mapping:
+          composition: additive
+          schema_fields:
+            required:
+              - children for within-kernel additive composition or multiple feature_groups with group_composition=additive
+      required_args:
+        - composition=additive
+      optional_args: []
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - combines any supported kernels as sum
+      mathematical_role:
+        - sum of latent processes
+      modeling_assumptions:
+        - independent mechanisms contribute additively to covariance structure
+      observable_evidence_for_use:
+        data_patterns:
+          - separable feature blocks
+          - multiple distinct effects without dominant interaction
+        domain_language_cues:
+          - additive effects
+          - independent drivers
+          - separate contributions
+        experimental_signals:
+          - interpretable input blocks
+        example_user_statements:
+          - "macro and local effects add together"
+      exclusion_rules:
+        anti_patterns:
+          - dominant interaction behavior
+        invalid_conditions:
+          - no meaningful decomposition of features or components
+        diagnostic_failures:
+          - residual interaction remains after additive fit
+      hyperparameter_semantics: []
+      interaction_effects:
+        kernels:
+          - additive preserves component interpretability
+        means:
+          - pairs well with linear or constant mean
+        priors:
+          - priors can be attached per term
+        multitask:
+          - additive data kernel can be shared across tasks
+        normalization:
+          - feature scaling important across blocks
+      composition_patterns:
+        - pattern: feature_block_additivity
+          description: separate kernel per mechanism
+          when_to_use:
+            - interpretable independent processes
+          when_not_to_use:
+            - interaction dominates
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - ModelListGP
+          - MultiTaskGP
+        why:
+          - composition choice is family-agnostic
+        constraints:
+          - multiple feature groups require non-none group composition
+      diagnostics_and_revision_rules:
+        checks:
+          - inspect residual interaction by feature pair
+        failure_symptoms:
+          - underfit on cross-feature effects
+        fixes:
+          - move to hierarchical or multiplicative composition
+      decision_triggers:
+        IF THEN:
+          - IF separate mechanisms contribute independently THEN choose additive composition
+        counterfactual_checks:
+          - IF multiplicative or hierarchical composition materially improves fit THEN additive assumption was too weak
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - independence of effects is often approximate
+      citations:
+        - https://docs.gpytorch.ai/en/stable/examples/00_Basic_Usage/kernels_with_additive_or_product_structure.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use for independent latent contributions
+        - reject when interactions dominate
+      schema_ready_example:
+        group_composition: additive
+
+    - object_type: composition_pattern
+      canonical_name: multiplicative
+      aliases:
+        - product_kernel
+      implementation_mapping:
+        gpytorch_class: gpytorch.kernels.ProductKernel
+        botorch_usage:
+          - covar_module composition in all exact families
+        gparchitect_schema_mapping:
+          composition: multiplicative
+          schema_fields:
+            required:
+              - children for within-kernel multiplicative composition or group_composition=multiplicative
+      required_args:
+        - composition=multiplicative
+      optional_args: []
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - products of supported kernels
+      mathematical_role:
+        - interaction-sensitive covariance structure
+      modeling_assumptions:
+        - covariance contribution depends jointly on multiple components
+      observable_evidence_for_use:
+        data_patterns:
+          - effect of one variable depends on another
+        domain_language_cues:
+          - interaction
+          - depends on
+          - combined effect
+        experimental_signals:
+          - additive model leaves pairwise residual structure
+        example_user_statements:
+          - "temperature effect depends on pressure"
+      exclusion_rules:
+        anti_patterns:
+          - no evidence of interaction
+          - low-data regime where product complexity is unjustified
+        invalid_conditions:
+          - using product when interpretability of separate effects is primary and data weak
+        diagnostic_failures:
+          - unstable fit or no gain over additive
+      hyperparameter_semantics: []
+      interaction_effects:
+        kernels:
+          - product can create localized structured dependence
+        means:
+          - often used with simple mean to keep interaction in covariance
+        priors:
+          - regularization important under low data
+        multitask:
+          - applies to shared data kernel in multitask settings
+        normalization:
+          - scaled inputs reduce product-kernel instability
+      composition_patterns:
+        - pattern: smooth_interaction
+          description: covariance emphasizes joint feature similarity
+          when_to_use:
+            - explicit cross-feature interaction
+          when_not_to_use:
+            - additive effects suffice
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - family-agnostic interaction encoding
+        constraints:
+          - GPArchitect wraps multiplicative groups with outer ScaleKernel
+      diagnostics_and_revision_rules:
+        checks:
+          - compare against additive baseline
+        failure_symptoms:
+          - little gain with more instability
+        fixes:
+          - revert to additive
+          - use hierarchical to keep main effects plus interactions
+      decision_triggers:
+        IF THEN:
+          - IF domain states interaction or conditional effect THEN consider multiplicative composition
+        counterfactual_checks:
+          - IF additive composition performs equally well THEN interaction is not justified
+      evidence_strength:
+        theoretical: strong
+        empirical_library_support: strong
+        heuristic_elements:
+          - interaction necessity should be confirmed by ablation
+      citations:
+        - https://docs.gpytorch.ai/en/stable/examples/00_Basic_Usage/kernels_with_additive_or_product_structure.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use for cross-feature interaction
+        - reject when additive structure is sufficient
+      schema_ready_example:
+        group_composition: multiplicative
+
+    - object_type: composition_pattern
+      canonical_name: hierarchical
+      aliases:
+        - main_effects_plus_interactions
+      implementation_mapping:
+        gpytorch_class: additive kernel over main effects plus scaled product interaction terms
+        botorch_usage:
+          - GPArchitect-specific group composition strategy
+        gparchitect_schema_mapping:
+          group_composition: hierarchical
+          schema_fields:
+            required:
+              - group_composition=hierarchical
+              - multiple feature_groups
+      required_args:
+        - group_composition=hierarchical
+      optional_args: []
+      supported_contexts:
+        SingleTaskGP: supported
+        MultiTaskGP: supported
+        ModelListGP: supported
+      composition_compatibility:
+        - requires multiple feature groups
+      mathematical_role:
+        - combines additive main effects with pairwise interaction products
+      modeling_assumptions:
+        - main effects exist and interactions matter beyond them
+      observable_evidence_for_use:
+        data_patterns:
+          - both separate block effects and pairwise interactions
+        domain_language_cues:
+          - main effects and interaction
+          - both independent and combined influence
+        experimental_signals:
+          - additive model underfits but pure product is too restrictive
+        example_user_statements:
+          - "temperature and pressure each matter, and they also interact"
+      exclusion_rules:
+        anti_patterns:
+          - no interpretable feature groups
+          - very low-data regime with many groups
+        invalid_conditions:
+          - interaction-only phenomenon with no main effects
+        diagnostic_failures:
+          - interaction terms add instability without predictive gain
+      hyperparameter_semantics: []
+      interaction_effects:
+        kernels:
+          - GPArchitect creates additive main terms plus scaled pairwise products
+        means:
+          - often pair with simple means
+        priors:
+          - per-term priors may regularize complexity
+        multitask:
+          - shared hierarchical data kernel possible
+        normalization:
+          - critical for stable comparison of interaction scales
+      composition_patterns:
+        - pattern: main_plus_pairwise_interactions
+          description: main effects retained while adding interactions
+          when_to_use:
+            - both block-level and pairwise interaction evidence exists
+          when_not_to_use:
+            - sparse data or no block partition
+      model_routing_implications:
+        suggests:
+          - SingleTaskGP
+          - MultiTaskGP
+          - ModelListGP
+        why:
+          - family independent composition rule
+        constraints:
+          - only pairwise group interactions are constructed by current builder
+      diagnostics_and_revision_rules:
+        checks:
+          - compare with additive and multiplicative baselines
+        failure_symptoms:
+          - overcomplexity without gain
+        fixes:
+          - revert to additive
+          - simplify feature grouping
+      decision_triggers:
+        IF THEN:
+          - IF both main effects and interactions are explicitly required THEN choose hierarchical composition
+        counterfactual_checks:
+          - IF additive or multiplicative alone suffices THEN hierarchical is unnecessary
+      evidence_strength:
+        theoretical: medium
+        empirical_library_support: medium
+        heuristic_elements:
+          - hierarchical grouping quality depends on user-specified feature blocks
+      citations:
+        - https://docs.gpytorch.ai/en/stable/examples/00_Basic_Usage/kernels_with_additive_or_product_structure.html
+        - https://github.com/ethantenison/gparchitect/
+      concise_agent_summary:
+        - use for main effects plus interactions across feature groups
+        - reject when data or grouping support is weak
+
+      schema_ready_example:
+        group_composition: hierarchical
+
+  decision_graph:
+    - node: number_of_outputs
+      condition: IF output_dim == 1 THEN single-output-path ELSE multi-output-path
+      decision: IF output_dim == 1 THEN SingleTaskGP ELSE evaluate_correlation_between_outputs
+      rationale: IF one target only THEN multi-output structure is unnecessary ELSE output coupling decision is required
+
+    - node: shared_inputs
+      condition: IF output_dim == 1 AND all observations use the same input feature set THEN choose_single_task ELSE choose_single_task
+      decision: IF output_dim == 1 THEN SingleTaskGP ELSE evaluate_data_density
+      rationale: IF one target only THEN GPArchitect exact regression route is SingleTaskGP
+
+    - node: data_density
+      condition: IF output_dim > 1 AND observations are in long format with one observed output column plus a task indicator column AND per-task sample size is low-to-moderate THEN evaluate_domain_coupling_knowledge ELSE evaluate_shared_inputs
+      decision: IF long_format_with_task_indicator == true THEN evaluate_domain_coupling_knowledge ELSE evaluate_shared_inputs
+      rationale: IF MultiTaskGP candidate format is absent THEN disqualify MultiTaskGP ELSE retain MultiTaskGP as candidate
+
+    - node: shared_inputs
+      condition: IF output_dim > 1 AND all outputs are observed on the same or substantially overlapping input design THEN evaluate_correlation_between_outputs ELSE choose_ModelListGP
+      decision: IF shared_or_overlapping_inputs == true THEN evaluate_correlation_between_outputs ELSE ModelListGP
+      rationale: IF outputs do not share aligned design support THEN disqualify MultiTaskGP and joint independent batched modeling; choose separate submodels
+
+    - node: correlation_between_outputs
+      condition: IF output_dim > 1 AND cross-output correlation is expected or observed AND is not negligible THEN evaluate_domain_coupling_knowledge ELSE evaluate_noise_characteristics
+      decision: IF correlated_outputs == true THEN evaluate_domain_coupling_knowledge ELSE evaluate_noise_characteristics
+      rationale: IF outputs are effectively independent THEN do not pay coupling complexity cost
+
+    - node: domain_coupling_knowledge
+      condition: IF outputs share mechanism, physics, task family, or hierarchical relatedness AND borrowing strength is desirable THEN evaluate_noise_characteristics ELSE choose_ModelListGP
+      decision: IF shared_latent_structure == true THEN evaluate_noise_characteristics ELSE ModelListGP
+      rationale: IF domain does not support shared latent structure THEN disqualify MultiTaskGP even when empirical correlation exists
+
+    - node: noise_characteristics
+      condition: IF output_dim > 1 AND correlated_outputs == true AND shared_latent_structure == true AND noise is not so output-specific or structurally mismatched that shared multitask fitting becomes misleading THEN choose_MultiTaskGP ELSE choose_ModelListGP
+      decision: IF multitask_noise_mismatch_is_not_dominant == true THEN MultiTaskGP ELSE ModelListGP
+      rationale: IF cross-output structure is useful and not dominated by incompatible noise patterns THEN choose shared multitask model ELSE prefer independent submodels
+
+    - node: noise_characteristics
+      condition: IF output_dim > 1 AND correlated_outputs == false THEN choose_independent_multi_output_models ELSE terminate_prior_branch
+      decision: IF correlated_outputs == false THEN Independent multi-output models ELSE ModelListGP
+      rationale: IF outputs are independent THEN direct independent fits are preferred
+
+    - node: independent_multi_output_models
+      condition: IF output_dim > 1 AND independent outputs should still be managed as one BoTorch container THEN choose_ModelListGP ELSE choose_independent_multi_output_models
+      decision: IF containerized_independent_outputs_needed == true THEN ModelListGP ELSE Independent multi-output models
+      rationale: IF orchestration convenience is required THEN choose ModelListGP ELSE separate independent models are sufficient
+
+    - node: final_single_output
+      condition: IF output_dim == 1 AND target is continuous under exact Gaussian regression assumptions THEN choose_SingleTaskGP ELSE choose_SingleTaskGP
+      decision: IF output_dim == 1 THEN SingleTaskGP ELSE SingleTaskGP
+      rationale: IF current GPArchitect contract is followed for single-output regression THEN SingleTaskGP is the terminal choice
+
+    - node: disqualifier_multitask_missing_task_index
+      condition: IF output_dim > 1 AND task_feature_index is missing THEN do_not_choose_MultiTaskGP
+      decision: IF task_feature_index_missing == true THEN ModelListGP ELSE continue_multitask_path
+      rationale: IF GPArchitect multitask contract cannot be satisfied THEN disqualify MultiTaskGP
+
+    - node: disqualifier_multitask_missing_task_values
+      condition: IF output_dim > 1 AND task_values are missing or inconsistent with observed task labels THEN do_not_choose_MultiTaskGP
+      decision: IF task_values_invalid == true THEN ModelListGP ELSE continue_multitask_path
+      rationale: IF explicit task domain is unavailable THEN disqualify MultiTaskGP
+
+    - node: disqualifier_independent_outputs_with_shared_signal
+      condition: IF outputs are sparse per task AND strong shared structure exists AND aligned design is available THEN do_not_choose_Independent_multi_output_models
+      decision: IF sparse_tasks_and_shared_structure == true THEN MultiTaskGP ELSE Independent multi-output models
+      rationale: IF borrowing strength is materially valuable THEN disqualify purely independent fits
+
+    - node: disqualifier_modellist_for_strong_coupling
+      condition: IF strong cross-output dependence is central to the problem AND long-format task encoding is available THEN do_not_choose_ModelListGP
+      decision: IF strong_coupling_and_valid_multitask_format == true THEN MultiTaskGP ELSE ModelListGP
+      rationale: IF independence assumption is substantively wrong THEN disqualify ModelListGP
+
+  templates:
+    - name: trend_plus_residual
+      structure:
+        model_family: SingleTaskGP
+        mean:
+          mean_type: Linear
+        feature_groups:
+          - name: residual_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      when_to_use:
+        - deterministic global trend is expected
+        - residual deviations around trend remain smooth
+        - a linear baseline is easier to defend than forcing the kernel to absorb trend
+      required_evidence:
+        - response changes monotonically or approximately linearly with at least one covariate
+        - residual plots after detrending still show structured smooth variation
+        - domain language includes trend, baseline, drift, or slope
+      failure_cases:
+        - nonlinear global trend remains in residuals and posterior mean underfits
+        - residual process is rough or discontinuous and Matern52 oversmooths
+        - strong periodicity remains unexplained after fit
+      disqualifiers:
+        - no defensible trend signal
+        - abrupt regime changes dominate
+        - output is primarily periodic rather than trend-driven
+      DSL_example:
+        model_class: SingleTaskGP
+        input_dim: 2
+        output_dim: 1
+        mean:
+          mean_type: Linear
+        feature_groups:
+          - name: residual_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+
+    - name: periodic_plus_smooth_variation
+      structure:
+        model_family: SingleTaskGP
+        mean:
+          mean_type: Constant
+        feature_groups:
+          - name: time_signal
+            feature_indices:
+              - 0
+            kernel:
+              kernel_type: RBF
+              composition: multiplicative
+              children:
+                - kernel_type: Periodic
+                  period_length: 12.0
+                  ard: false
+                - kernel_type: RBF
+                  ard: false
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      when_to_use:
+        - repeating cycle is present
+        - cycle is smooth within each period
+        - nonperiodic smooth deviation around periodic structure is expected
+      required_evidence:
+        - explicit time or phase feature exists
+        - known or estimable stable period
+        - repeated peaks and troughs across multiple cycles
+      failure_cases:
+        - period is unstable or drifting
+        - one-off events are mistaken for seasonality
+        - amplitude modulation or trend dominates and remains in residuals
+      disqualifiers:
+        - no time-like covariate
+        - fewer than roughly two effective cycles in training support
+        - regime breaks overwhelm periodic recurrence
+      DSL_example:
+        model_class: SingleTaskGP
+        input_dim: 1
+        output_dim: 1
+        mean:
+          mean_type: Constant
+        feature_groups:
+          - name: time_signal
+            feature_indices:
+              - 0
+            kernel:
+              kernel_type: RBF
+              composition: multiplicative
+              children:
+                - kernel_type: Periodic
+                  period_length: 12.0
+                - kernel_type: RBF
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+
+    - name: additive_independent_processes
+      structure:
+        model_family: SingleTaskGP
+        mean:
+          mean_type: Constant
+        feature_groups:
+          - name: block_a
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+          - name: block_b
+            feature_indices:
+              - 2
+            kernel:
+              kernel_type: RBF
+              ard: false
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      when_to_use:
+        - inputs belong to distinct mechanisms
+        - effects are approximately additive rather than strongly interactive
+        - interpretability by component matters
+      required_evidence:
+        - defensible partition of feature groups
+        - additive language such as independent drivers or separate contributions
+        - interaction diagnostics do not dominate
+      failure_cases:
+        - strong cross-group interaction remains in residuals
+        - wrong feature grouping causes unstable attribution
+        - one block absorbs variation belonging to another
+      disqualifiers:
+        - main predictive effect is interaction-driven
+        - no meaningful feature partition exists
+        - sample size is too small for multiple flexible blocks
+      DSL_example:
+        model_class: SingleTaskGP
+        input_dim: 3
+        output_dim: 1
+        mean:
+          mean_type: Constant
+        feature_groups:
+          - name: block_a
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+          - name: block_b
+            feature_indices:
+              - 2
+            kernel:
+              kernel_type: RBF
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+
+    - name: correlated_multitask_outputs
+      structure:
+        model_family: MultiTaskGP
+        mean:
+          mean_type: Constant
+        output_means:
+          0:
+            mean_type: Constant
+          1:
+            mean_type: Constant
+        feature_groups:
+          - name: shared_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+        task_feature_index: 2
+        task_values:
+          - 0
+          - 1
+        multitask_rank: 1
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      when_to_use:
+        - outputs are related
+        - shared latent structure is expected
+        - some tasks can benefit from borrowing strength from others
+      required_evidence:
+        - long-format data with task indicator column
+        - non-negligible cross-task dependence
+        - domain rationale for shared mechanism
+      failure_cases:
+        - negative transfer across tasks
+        - task-specific behavior dominates shared structure
+        - no predictive gain over independent baselines
+      disqualifiers:
+        - outputs are independent or unrelated
+        - task indicator is missing
+        - task_values cannot be enumerated consistently
+      DSL_example:
+        model_class: MultiTaskGP
+        input_dim: 3
+        output_dim: 1
+        mean:
+          mean_type: Constant
+        output_means:
+          0:
+            mean_type: Constant
+          1:
+            mean_type: Constant
+        feature_groups:
+          - name: shared_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+        task_feature_index: 2
+        task_values:
+          - 0
+          - 1
+        multitask_rank: 1
+        group_composition: additive
+        noise:
+          fixed: false
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+
+    - name: low_data_strong_prior_model
+      structure:
+        model_family: SingleTaskGP
+        mean:
+          mean_type: Constant
+        feature_groups:
+          - name: all_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+              lengthscale_prior:
+                distribution: LogNormal
+                params:
+                  loc: 0.0
+                  scale: 0.4
+              outputscale_prior:
+                distribution: Gamma
+                params:
+                  concentration: 2.0
+                  rate: 1.0
+        group_composition: additive
+        noise:
+          fixed: false
+          prior:
+            distribution: Gamma
+            params:
+              concentration: 2.0
+              rate: 5.0
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      when_to_use:
+        - sample size is small
+        - domain knowledge about smoothness and noise is available
+        - agent must reduce overfitting and unstable hyperparameter search
+      required_evidence:
+        - limited observations relative to input flexibility
+        - defendable prior beliefs on lengthscale, signal amplitude, or noise
+        - no strong evidence requiring highly expressive kernel structure
+      failure_cases:
+        - priors dominate posterior and suppress genuine signal
+        - prior centers are misaligned with scaled data
+        - model underfits due to overly strong shrinkage
+      disqualifiers:
+        - no defensible prior calibration
+        - high-dimensional sparse input space with weak signal
+        - dominant discontinuity or regime change unsupported by stationary kernel
+      DSL_example:
+        model_class: SingleTaskGP
+        input_dim: 2
+        output_dim: 1
+        mean:
+          mean_type: Constant
+        feature_groups:
+          - name: all_inputs
+            feature_indices:
+              - 0
+              - 1
+            kernel:
+              kernel_type: Matern52
+              ard: true
+              lengthscale_prior:
+                distribution: LogNormal
+                params:
+                  loc: 0.0
+                  scale: 0.4
+              outputscale_prior:
+                distribution: Gamma
+                params:
+                  concentration: 2.0
+                  rate: 1.0
+        group_composition: additive
+        noise:
+          fixed: false
+          prior:
+            distribution: Gamma
+            params:
+              concentration: 2.0
+              rate: 5.0
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+
+  translation_rules:
+    - trigger_phrases:
+        - seasonal behavior
+        - seasonality
+        - repeating cycle
+        - weekly pattern
+        - monthly pattern
+        - annual cycle
+        - periodic signal
+        - cyclical behavior
+      interpretation:
+        primary_structure: periodic latent component
+        secondary_structure: often needs smooth envelope or residual component
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - MultiTaskGP
+            - ModelListGP
+        mean:
+          default: Constant
+        kernels:
+          primary:
+            - kernel_type: Periodic
+              period_length: infer_or_specify
+          optional:
+            - kernel_type: RBF
+            - kernel_type: Matern52
+        composition_patterns:
+          - Periodic x RBF
+          - Periodic + RBF
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - no explicit time, phase, or cycle index
+        - one-off event mistaken for recurrence
+        - changing period with no stable cycle support
+        - abrupt regime switching dominates over repetition
+      follow_up_questions:
+        - what variable encodes time or phase?
+        - what period is expected or observed?
+        - is the cycle stable or drifting?
+        - do you expect a trend in addition to seasonality?
+
+    - trigger_phrases:
+        - correlated outputs
+        - outputs move together
+        - tasks are related
+        - different machines behave similarly
+        - products share dynamics
+        - multiple related targets
+        - shared behavior across outputs
+      interpretation:
+        primary_structure: cross-output dependence may justify multitask sharing
+        secondary_structure: decide whether shared latent structure is stronger than independent fits
+      recommended_components:
+        model_family:
+          preferred: MultiTaskGP
+          alternatives:
+            - ModelListGP
+            - independent_multi_output
+        mean:
+          default: Constant
+          optional:
+            - task_specific_means
+        kernels:
+          primary:
+            - kernel_type: Matern52
+          optional:
+            - kernel_type: RBF
+        multitask:
+          required_for_preferred:
+            - task_feature_index
+            - task_values
+            - multitask_rank
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - outputs are semantically unrelated
+        - no task indicator or long-format representation available
+        - outputs do not share input support
+        - observed correlation disappears after conditioning on inputs
+      follow_up_questions:
+        - are all outputs measured on the same inputs or aligned conditions?
+        - do you have a task indicator column?
+        - do you expect shared mechanism or merely coincidental co-movement?
+        - is borrowing strength important because some tasks are data-poor?
+
+    - trigger_phrases:
+        - small data
+        - limited data
+        - few observations
+        - sparse observations
+        - high uncertainty
+        - low sample size
+        - not much training data
+      interpretation:
+        primary_structure: conservative exact GP with informative priors and low-complexity kernel
+        secondary_structure: avoid unnecessary output coupling or highly flexible kernels unless strongly justified
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - MultiTaskGP
+        mean:
+          default: Constant
+          optional:
+            - Linear
+        kernels:
+          primary:
+            - kernel_type: RBF
+            - kernel_type: Matern52
+          avoid_by_default:
+            - SpectralMixture
+            - high-complexity compositions
+        priors:
+          preferred:
+            - lengthscale_prior
+            - outputscale_prior
+            - noise.prior
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - no defensible prior information and very high-dimensional inputs
+        - process is clearly discontinuous or regime-driven
+        - user requests highly expressive kernel without enough evidence
+      follow_up_questions:
+        - how many observations and input dimensions do you have?
+        - what prior knowledge do you have about smoothness or noise?
+        - is conservative interpolation more important than capturing fine detail?
+        - are outputs single-target or related tasks?
+
+    - trigger_phrases:
+        - regime change
+        - structural break
+        - sudden shift
+        - abrupt transition
+        - phase change
+        - breakpoint
+        - before and after behavior differs
+      interpretation:
+        primary_structure: standard stationary exact GP kernels are likely misspecified
+        secondary_structure: if forced into current GPArchitect contract, use rougher residual kernel plus explicit trend partitioning only as fallback
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - ModelListGP
+        mean:
+          default: Constant
+          optional:
+            - Linear
+        kernels:
+          conservative_fallback:
+            - kernel_type: Matern12
+            - kernel_type: Matern32
+        composition_patterns:
+          - separate_models_if_regimes_can_be_segmented
+          - additive_blocks_only_if_regime_covariate_is_explicit
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+        routing_note:
+          preferred_action: segment_data_or_represent_regime_explicitly_before_GP_fit
+      disqualifiers:
+        - no regime indicator and transition is dominant
+        - user expects a stationary kernel to explain a discontinuity directly
+        - abrupt jump is sharper than Matern roughness can plausibly absorb
+      follow_up_questions:
+        - do you know the regime boundary or indicator variable?
+        - should regimes be modeled separately?
+        - is the change abrupt or gradual?
+        - do you need interpolation across the break or separate behavior on each side?
+
+    - trigger_phrases:
+        - monotonic trend
+        - increasing trend
+        - decreasing trend
+        - upward drift
+        - downward drift
+        - overall growth
+        - overall decline
+      interpretation:
+        primary_structure: deterministic mean trend should be separated from residual covariance
+        secondary_structure: smooth kernel should model departures around trend, not absorb the entire slope
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - MultiTaskGP
+            - ModelListGP
+        mean:
+          preferred: Linear
+          alternatives:
+            - Constant
+        kernels:
+          primary:
+            - kernel_type: RBF
+            - kernel_type: Matern52
+        composition_patterns:
+          - linear_mean + smooth_residual_kernel
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - trend is nonlinear with obvious curvature not captured by linear mean
+        - abrupt structural breaks dominate
+        - monotonicity is only local and not global
+      follow_up_questions:
+        - is the trend approximately linear over the modeled range?
+        - which covariate carries the trend?
+        - do residuals still show seasonality or local structure?
+        - do you need strict monotonicity or just an overall directional trend?
+
+    - trigger_phrases:
+        - noisy observations
+        - high measurement noise
+        - sensors are noisy
+        - observations are unreliable
+        - variance in measurements
+        - heteroskedastic noise
+        - label noise
+      interpretation:
+        primary_structure: likelihood/noise model needs explicit attention
+        secondary_structure: current GPArchitect contract supports Gaussian exact-regression noise with optional fixed value or prior
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - MultiTaskGP
+            - ModelListGP
+        noise:
+          default:
+            fixed: false
+          optional:
+            - noise.prior
+            - fixed_noise_if_known
+        kernels:
+          default:
+            - kernel_type: Matern52
+            - kernel_type: RBF
+        means:
+          default: Constant
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+        routing_note:
+          if_noise_differs_by_task: consider MultiTaskGP only if coupling is justified
+      disqualifiers:
+        - non-Gaussian observation model is required
+        - noise is strongly input-dependent and contract cannot represent heteroskedastic likelihood directly
+        - outliers dominate and Gaussian noise assumption is poor
+      follow_up_questions:
+        - is the noise level known, learnable, or varying by region?
+        - are there outliers or heavy tails?
+        - is the noise shared across tasks or task-specific?
+        - do you have replicate measurements to estimate noise directly?
+
+    - trigger_phrases:
+        - smooth relationship
+        - gradual variation
+        - continuous effect
+        - nearby points should be similar
+      interpretation:
+        primary_structure: stationary smooth covariance
+        secondary_structure: decide between very smooth and moderately smooth kernel
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - MultiTaskGP
+            - ModelListGP
+        kernels:
+          preferred:
+            - kernel_type: RBF
+          alternatives:
+            - kernel_type: Matern52
+        means:
+          default: Constant
+          optional:
+            - Linear
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - kinks, cusps, or discontinuities are visible
+        - periodicity is dominant
+        - strong trend is present but mean term omitted
+      follow_up_questions:
+        - do you expect very smooth behavior or some local roughness?
+        - is there also a global trend?
+        - are there known periodic effects?
+        - should features have separate lengthscales?
+
+    - trigger_phrases:
+        - rough function
+        - irregular local behavior
+        - non-smooth surface
+        - sharp local changes
+        - kinks
+      interpretation:
+        primary_structure: rougher stationary kernel than RBF
+        secondary_structure: choose lower-smoothness Matern before escalating complexity
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - MultiTaskGP
+        kernels:
+          preferred:
+            - kernel_type: Matern12
+          alternatives:
+            - kernel_type: Matern32
+        means:
+          default: Constant
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - true discontinuity rather than rough continuity
+        - clear periodicity dominates
+        - deterministic trend omitted from mean
+      follow_up_questions:
+        - are changes continuous but rough, or actually discontinuous?
+        - are local spikes measurement noise or real signal?
+        - do you need separate regime models?
+        - is roughness shared across all input dimensions?
+
+    - trigger_phrases:
+        - varying length scales
+        - multi-scale behavior
+        - both long-term and short-term variation
+        - broad trend with local deviations
+        - scale mixture behavior
+      interpretation:
+        primary_structure: multiple smoothness scales in one latent function
+        secondary_structure: RQ or additive decomposition are candidates
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - ModelListGP
+        kernels:
+          preferred:
+            - kernel_type: RQ
+          alternatives:
+            - additive RBF blocks
+            - additive Matern + RBF
+        means:
+          default: Constant
+          optional:
+            - Linear
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - multi-scale claim is unsupported by data
+        - dominant periodicity is misread as multi-scale smoothness
+        - too little data for flexible scale mixture behavior
+      follow_up_questions:
+        - do you see nested short- and long-range variation in the same target?
+        - would separate additive processes be more interpretable than a single RQ kernel?
+        - is data volume sufficient for extra flexibility?
+        - is there also periodic structure?
+
+    - trigger_phrases:
+        - independent drivers
+        - separate mechanisms
+        - different feature blocks
+        - macro and local effects
+        - additive effects
+        - contributions add up
+      interpretation:
+        primary_structure: feature-group decomposition with additive composition
+        secondary_structure: allow different kernels per block
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - ModelListGP
+        feature_groups:
+          required: true
+        composition:
+          preferred: additive
+        kernels:
+          per_group:
+            - choose_by_block_smoothness
+        means:
+          default: Constant
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - dominant multiplicative interaction between blocks
+        - no defensible partition of inputs
+        - user expects one shared latent mechanism across all features
+      follow_up_questions:
+        - which inputs belong to each mechanism?
+        - do the blocks interact or mostly contribute independently?
+        - should blocks have different smoothness assumptions?
+        - is interpretability by component important?
+
+    - trigger_phrases:
+        - interaction effect
+        - variables interact
+        - effect depends on another variable
+        - combined effect
+        - cross-term behavior
+      interpretation:
+        primary_structure: multiplicative or hierarchical kernel composition
+        secondary_structure: interaction should not be represented as purely additive blocks
+      recommended_components:
+        model_family:
+          preferred: SingleTaskGP
+          alternatives:
+            - MultiTaskGP
+        composition:
+          preferred:
+            - multiplicative
+            - hierarchical
+        kernels:
+          candidates:
+            - RBF x RBF
+            - Matern x Matern
+            - group-level hierarchical composition
+        means:
+          default: Constant
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - no evidence of interaction
+        - limited data makes interaction estimation unstable
+        - additive decomposition already explains variation sufficiently
+      follow_up_questions:
+        - which variables interact?
+        - is the interaction global or only in certain regions?
+        - do you need main effects plus interaction, or interaction only?
+        - is there enough data to estimate cross-effects?
+
+    - trigger_phrases:
+        - each output should be modeled separately
+        - outputs have different feature relevance
+        - outputs are independent
+        - separate models per target
+        - no shared correlation across outputs
+      interpretation:
+        primary_structure: independent exact GP per output
+        secondary_structure: use ModelListGP if one BoTorch container is desired
+      recommended_components:
+        model_family:
+          preferred: ModelListGP
+          alternatives:
+            - independent_multi_output
+        means:
+          optional:
+            - output_specific_means
+        kernels:
+          per_output:
+            - choose independently
+        execution:
+          input_scaling: true
+          outcome_standardization: true
+      disqualifiers:
+        - meaningful output correlation is expected
+        - user wants strength sharing across sparse tasks
+        - outputs naturally fit long-format multitask representation
+      follow_up_questions:
+        - do outputs share any mechanism worth modeling jointly?
+        - should each output use the same inputs?
+        - do outputs need different means or kernels?
+        - do you want one container model or fully separate training workflows?
+
+validation_report:
+  missing_elements:
+    - no object exists yet for Uniform prior
+    - no object exists yet for Polynomial kernel
+    - no object exists yet for SpectralMixture kernel
+    - no object exists yet for InfiniteWidthBNN kernel
+    - no object exists yet for ExponentialDecay kernel
+    - no standalone object exists for independent_multi_output as a non-ModelList workflow artifact
+    - kernel objects do not yet cover explicit outputscale_prior wrapper behavior as its own reusable object
+  weak_sections:
+    - regime_change translation rule is only a fallback because current GPArchitect contract lacks explicit changepoint kernels
+    - noise handling is limited to Gaussian exact-regression noise; heteroskedastic and non-Gaussian cases are routed away rather than modeled
+    - decision graph contains both ModelListGP and independent_multi_output endpoints, but only ModelListGP is directly represented as a GPArchitect model_class
+    - prior object guidance for Normal prior on positive constrained hyperparameters is weaker than LogNormal/Gamma guidance
+    - composition templates cover direct instantiation for required templates only; broader library templates are not yet enumerated
+  ambiguity_risks:
+    - monotonic trend language may imply strict monotonic constraints, but current contract only supports Linear mean, not constrained monotonic GP priors
+    - correlated outputs language may reflect common inputs rather than true residual cross-output coupling
+    - seasonal behavior may be confused with autocorrelation or sparse repeated events if time support is weak
+    - small data does not specify whether low n, high d, or sparse per-task regime is dominant
+    - additive versus multiplicative composition often cannot be resolved from language alone without follow-up questions
+    - MultiTaskGP applicability depends on long-format task encoding and explicit task_values; users may describe correlated outputs without having this representation
