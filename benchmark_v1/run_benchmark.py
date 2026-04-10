@@ -55,6 +55,7 @@ import pandas as pd
 
 logger = logging.getLogger(__name__)
 
+
 # ---------------------------------------------------------------------------
 # Result record
 # ---------------------------------------------------------------------------
@@ -205,14 +206,14 @@ def _load_dataset(dataset_name: str, seed: int, noise_std: float, n_train: int, 
         DatasetSplit object.
     """
     from benchmark_v1.datasets.botorch_functions import BOTORCH_GENERATORS
-    from benchmark_v1.datasets.synthetic import SYNTHETIC_GENERATORS
+    from benchmark_v1.datasets.synthetic import SYNTHETIC_GENERATORS, DatasetGeneratorFn
 
-    generators = {**SYNTHETIC_GENERATORS, **BOTORCH_GENERATORS}
+    generators: dict[str, DatasetGeneratorFn] = {**SYNTHETIC_GENERATORS, **BOTORCH_GENERATORS}
     if dataset_name not in generators:
         raise ValueError(f"Unknown dataset: {dataset_name}. Available: {sorted(generators)}")
 
     gen_fn = generators[dataset_name]
-    return gen_fn(seed=seed, n_train=n_train, n_test=n_test, noise_std=noise_std)  # type: ignore[operator]
+    return gen_fn(seed=seed, n_train=n_train, n_test=n_test, noise_std=noise_std)
 
 
 # ---------------------------------------------------------------------------
@@ -334,9 +335,9 @@ def run_baseline(
 
     t0 = time.perf_counter()
     try:
-        factory = BASELINE_FACTORIES[baseline_name]  # type: ignore[index]
+        factory = BASELINE_FACTORIES[baseline_name]
         input_dim = len(split.input_columns)
-        spec = factory(input_dim=input_dim, output_dim=1)  # type: ignore[operator]
+        spec = factory(input_dim=input_dim, output_dim=1)
 
         train_bundle = prepare_data(
             split.train,

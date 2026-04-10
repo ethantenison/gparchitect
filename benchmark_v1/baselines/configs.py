@@ -36,6 +36,7 @@ What this module does NOT do:
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 from gparchitect.dsl.schema import (
     CompositionType,
@@ -121,7 +122,7 @@ def make_matern52_ard_spec(input_dim: int, output_dim: int = 1) -> GPSpec:
 
 
 #: Available baseline names → factory functions.
-BASELINE_FACTORIES: dict[str, object] = {
+BASELINE_FACTORIES: dict[str, Callable[[int, int], GPSpec]] = {
     "default_singletask": make_default_singletask_spec,
     "matern52_ard": make_matern52_ard_spec,
 }

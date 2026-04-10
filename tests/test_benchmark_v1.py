@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import numpy as np
 import pandas as pd
-import pytest  # noqa: F401
+import pytest
 
 # ---------------------------------------------------------------------------
 # Tier 2 synthetic dataset generators

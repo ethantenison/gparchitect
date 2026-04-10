@@ -34,6 +34,7 @@ What this module does NOT do:
 from __future__ import annotations
 
 import logging
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -268,7 +269,7 @@ def make_rosenbrock_dataset(
 # ---------------------------------------------------------------------------
 
 #: Map of function name → generator callable.
-BOTORCH_GENERATORS: dict[str, object] = {
+BOTORCH_GENERATORS: dict[str, Callable[..., DatasetSplit]] = {
     "branin": make_branin_dataset,
     "hartmann6": make_hartmann6_dataset,
     "rosenbrock": make_rosenbrock_dataset,

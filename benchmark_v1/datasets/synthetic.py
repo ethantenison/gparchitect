@@ -35,6 +35,7 @@ from __future__ import annotations
 import logging
 import math
 from dataclasses import dataclass, field
+from typing import Callable
 
 import numpy as np
 import pandas as pd
@@ -377,8 +378,11 @@ def make_ard_stress_dataset(
 # Registry helper
 # ---------------------------------------------------------------------------
 
+#: Type alias for dataset generator functions.
+DatasetGeneratorFn = Callable[..., DatasetSplit]
+
 #: Map of dataset name → generator function.
-SYNTHETIC_GENERATORS: dict[str, object] = {
+SYNTHETIC_GENERATORS: dict[str, DatasetGeneratorFn] = {
     "additive": make_additive_dataset,
     "periodic_decay": make_periodic_decay_dataset,
     "interaction": make_interaction_dataset,
