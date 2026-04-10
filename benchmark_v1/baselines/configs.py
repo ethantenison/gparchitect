@@ -89,7 +89,7 @@ def make_default_singletask_spec(input_dim: int, output_dim: int = 1) -> GPSpec:
 def make_matern52_ard_spec(input_dim: int, output_dim: int = 1) -> GPSpec:
     """Build a SingleTaskGP spec with Matern52 and full ARD.
 
-    This is the ``simple kernel heuristic'' baseline: Matern52 with
+    This is the "simple kernel heuristic" baseline: Matern52 with
     a separate lengthscale per input dimension.  This is a strong but
     conventional choice for continuous regression problems.
 
