@@ -20,10 +20,11 @@ poetry add gparchitect
 
 ## Requirements
 
-- Python 3.13.12
+- Python 3.11–3.13
 - BoTorch ≥ 0.11
 - GPyTorch ≥ 1.11
-- pandas ≥ 2.0
+- pandas ≥ 2.2
+- Click ≥ 8.1
 
 ---
 
