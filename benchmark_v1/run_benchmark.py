@@ -162,6 +162,16 @@ def _scale_test_inputs(
     transformed with the same scaling as training inputs, avoiding leakage
     of test distribution information.
 
+    Test values that fall outside the training range are linearly extrapolated
+    (i.e. they may map to values outside [0, 1]).  This is intentional — clamping
+    would distort out-of-distribution test points in a way that is harder to
+    interpret.
+
+    When a training feature is constant (``col_max == col_min``, ``scale == 0``),
+    the transformed value is set to ``0.0`` to match the behaviour of the training
+    data transform in ``prepare_data``.  A constant feature carries no information
+    for a GP kernel, so this choice is safe.
+
     Args:
         test_df: Test DataFrame with input columns.
         input_columns: Names of the input columns to scale and select.
