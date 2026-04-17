@@ -151,8 +151,45 @@ def _compute_metrics(
     }
 
 
+def _scale_test_inputs(
+    test_df: pd.DataFrame,
+    input_columns: list[str],
+    feature_ranges: dict[str, tuple[float, float]],
+) -> Any:
+    """Apply training min-max scaling to test inputs using pre-computed ranges.
+
+    Uses the training set's (min, max) ranges so that test inputs are
+    transformed with the same scaling as training inputs, avoiding leakage
+    of test distribution information.
+
+    Args:
+        test_df: Test DataFrame with input columns.
+        input_columns: Names of the input columns to scale and select.
+        feature_ranges: Pre-computed (min, max) per column from the training split.
+
+    Returns:
+        A torch.Tensor of shape (N, D) with the scaled test inputs.
+    """
+    import torch
+
+    scaled = test_df[input_columns].copy()
+    for col in input_columns:
+        if col in feature_ranges:
+            col_min, col_max = feature_ranges[col]
+            scale = col_max - col_min
+            if scale > 0:
+                scaled[col] = (scaled[col] - col_min) / scale
+            else:
+                scaled[col] = 0.0
+    return torch.tensor(scaled.to_numpy(dtype=float), dtype=torch.double)
+
+
 def _predict_metrics(model: Any, test_X: Any, y_true: np.ndarray) -> dict[str, float | None]:
     """Run a fitted model on test inputs and compute metrics.
+
+    The posterior is requested with ``observation_noise=True`` so that
+    predictive intervals reflect total predictive uncertainty (signal +
+    noise), which is the correct quantity for NLL and coverage evaluation.
 
     Args:
         model: A fitted BoTorch GP model.
@@ -169,7 +206,7 @@ def _predict_metrics(model: Any, test_X: Any, y_true: np.ndarray) -> dict[str, f
         model.eval()
         model.likelihood.eval()
         with torch.no_grad(), gpytorch.settings.fast_pred_var():
-            posterior = model.posterior(test_X)
+            posterior = model.posterior(test_X, observation_noise=True)
             mean = posterior.mean.squeeze(-1).cpu().numpy()
             variance = posterior.variance.squeeze(-1).cpu().numpy()
             std = np.sqrt(np.maximum(variance, 0.0))
@@ -249,7 +286,6 @@ def run_gparchitect_variant(
             output_columns=[split.output_column],
             max_retries=5,
         )
-        wall_time_s = time.perf_counter() - t0
         fit_success = experiment_log.final_success
         retry_count = max(0, len(experiment_log.attempts) - 1)
         error_message = ""
@@ -263,17 +299,16 @@ def run_gparchitect_variant(
         }
 
         if fit_success and model is not None:
-            # Prepare test tensor (use same scaling as training)
-            from gparchitect.builders.data import prepare_data
-
-            test_bundle = prepare_data(
+            # Scale test inputs using training ranges to avoid leaking test distribution
+            test_X = _scale_test_inputs(
                 split.test,
                 split.input_columns,
-                [split.output_column],
-                scale_inputs=True,
+                experiment_log.input_feature_ranges,
             )
             y_true = split.test[split.output_column].to_numpy()
-            metrics = _predict_metrics(model, test_bundle.train_X, y_true)
+            metrics = _predict_metrics(model, test_X, y_true)
+
+        wall_time_s = time.perf_counter() - t0
 
     except Exception as exc:
         wall_time_s = time.perf_counter() - t0
@@ -337,7 +372,8 @@ def run_baseline(
     try:
         factory = BASELINE_FACTORIES[baseline_name]
         input_dim = len(split.input_columns)
-        spec = factory(input_dim=input_dim, output_dim=1)
+        # Call positionally to satisfy Callable[[int, int], GPSpec] signature
+        spec = factory(input_dim, 1)
 
         train_bundle = prepare_data(
             split.train,
@@ -348,7 +384,6 @@ def run_baseline(
         model = build_model_from_dsl(spec, train_bundle.train_X, train_bundle.train_Y)
         fit_result = fit_and_validate(model, train_bundle.train_X, train_bundle.train_Y)
 
-        wall_time_s = time.perf_counter() - t0
         fit_success = fit_result.success
         error_message = fit_result.error_message or ""
 
@@ -361,14 +396,16 @@ def run_baseline(
         }
 
         if fit_success and fit_result.model is not None:
-            test_bundle = prepare_data(
+            # Scale test inputs using training ranges to avoid leaking test distribution
+            test_X = _scale_test_inputs(
                 split.test,
                 split.input_columns,
-                [split.output_column],
-                scale_inputs=True,
+                train_bundle.input_feature_ranges,
             )
             y_true = split.test[split.output_column].to_numpy()
-            metrics = _predict_metrics(fit_result.model, test_bundle.train_X, y_true)
+            metrics = _predict_metrics(fit_result.model, test_X, y_true)
+
+        wall_time_s = time.perf_counter() - t0
 
     except Exception as exc:
         wall_time_s = time.perf_counter() - t0

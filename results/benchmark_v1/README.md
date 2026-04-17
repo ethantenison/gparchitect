@@ -7,9 +7,13 @@ This directory contains benchmark run artifacts:
 - `aggregated.csv`    — per-(dataset, noise, model_id) aggregated metrics
 - `report.md`         — markdown benchmark report
 
-To generate these files, run:
+To generate these files, run from the **repository root** (source checkout):
 
 ```bash
-python -m benchmark_v1.run_benchmark
-python -m benchmark_v1.analyze_results results/benchmark_v1
+PYTHONPATH=src python -m benchmark_v1.run_benchmark
+PYTHONPATH=src python -m benchmark_v1.analyze_results results/benchmark_v1
 ```
+
+> **Note:** `benchmark_v1` is at the repository root and is not part of the
+> installed `gparchitect` package. These commands require a source checkout with
+> `src/` on `PYTHONPATH`.

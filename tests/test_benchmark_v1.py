@@ -377,7 +377,9 @@ class TestMetricHelpers:
         y = np.zeros(10)
         m1 = _compute_metrics(y_mean=y, y_std=np.ones(10) * 1.0, y_true=y)
         m2 = _compute_metrics(y_mean=y, y_std=np.ones(10) * 2.0, y_true=y)
-        assert m2["interval_width_95"] > m1["interval_width_95"]  # type: ignore[operator]
+        assert m1["interval_width_95"] is not None
+        assert m2["interval_width_95"] is not None
+        assert m2["interval_width_95"] > m1["interval_width_95"]
 
     def test_nll_lower_for_better_calibrated_predictions(self) -> None:
         from benchmark_v1.run_benchmark import _compute_metrics
@@ -387,7 +389,9 @@ class TestMetricHelpers:
         m_good = _compute_metrics(y_mean=y, y_std=np.ones(3) * 0.1, y_true=np.ones(3) * 0.1)
         # Overconfident: tiny std but large residuals
         m_bad = _compute_metrics(y_mean=y, y_std=np.ones(3) * 0.001, y_true=np.ones(3) * 1.0)
-        assert m_bad["nll"] > m_good["nll"]  # type: ignore[operator]
+        assert m_good["nll"] is not None
+        assert m_bad["nll"] is not None
+        assert m_bad["nll"] > m_good["nll"]
 
 
 # ---------------------------------------------------------------------------

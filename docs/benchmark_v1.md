@@ -15,18 +15,27 @@ The suite is designed to answer:
 
 ## Quick Start
 
+> **Note:** `benchmark_v1` is located at the repository root and is not
+> included in the installed `gparchitect` package.  All commands below must be
+> run from the **repository root** with the source checkout on `PYTHONPATH`, for
+> example:
+> ```bash
+> cd /path/to/gparchitect
+> PYTHONPATH=src python -m benchmark_v1.run_benchmark ...
+> ```
+
 ```bash
 # Run the full suite (may take 30–90 minutes)
-python -m benchmark_v1.run_benchmark
+PYTHONPATH=src python -m benchmark_v1.run_benchmark
 
 # Run only Tier 2 datasets at a single seed/noise level (fast)
-python -m benchmark_v1.run_benchmark --tier 2 --seed 0 --noise 0.05
+PYTHONPATH=src python -m benchmark_v1.run_benchmark --tier 2 --seed 0 --noise 0.05
 
 # Dry-run: print the plan without fitting
-python -m benchmark_v1.run_benchmark --dry-run
+PYTHONPATH=src python -m benchmark_v1.run_benchmark --dry-run
 
 # Generate the report from saved results
-python -m benchmark_v1.analyze_results results/benchmark_v1 \
+PYTHONPATH=src python -m benchmark_v1.analyze_results results/benchmark_v1 \
     --report docs/benchmark_v1_report.md
 ```
 

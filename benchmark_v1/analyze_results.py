@@ -338,30 +338,63 @@ def _generate_key_findings(df: pd.DataFrame, agg: pd.DataFrame) -> str:
     misleading = gpa[gpa["model_id"] == "misleading"]
 
     if not aligned.empty and not baselines.empty:
-        aligned_mean = aligned["rmse_mean"].dropna().mean()
-        vague_mean = vague["rmse_mean"].dropna().mean() if not vague.empty else float("nan")
-        misleading_mean = misleading["rmse_mean"].dropna().mean() if not misleading.empty else float("nan")
-        best_baseline_mean = baselines["rmse_mean"].dropna().min()
-
-        lines.append(
-            f"- **Aligned vs default baseline**: "
-            f"mean RMSE `aligned`={aligned_mean:.4f} vs "
-            f"best baseline={best_baseline_mean:.4f}. "
-            + ("Aligned prompts beat the best baseline." if aligned_mean < best_baseline_mean
-               else "Best baseline is competitive with aligned prompts.")
+        # Compute per-(dataset, noise) group comparisons so that the
+        # reduction is consistent across models.
+        best_baseline_per_group = (
+            baselines.groupby(["dataset_name", "noise_std"])["rmse_mean"]
+            .min()
+            .reset_index()
+            .rename(columns={"rmse_mean": "best_baseline_rmse"})
         )
-        if not np.isnan(vague_mean):
-            delta = vague_mean - aligned_mean
+        aligned_per_group = (
+            aligned[["dataset_name", "noise_std", "rmse_mean"]]
+            .rename(columns={"rmse_mean": "aligned_rmse"})
+        )
+        merged = aligned_per_group.merge(
+            best_baseline_per_group, on=["dataset_name", "noise_std"], how="inner"
+        ).dropna(subset=["aligned_rmse", "best_baseline_rmse"])
+
+        if not merged.empty:
+            aligned_mean = float(merged["aligned_rmse"].mean())
+            best_baseline_mean = float(merged["best_baseline_rmse"].mean())
+
             lines.append(
-                f"- **Aligned vs vague**: vague prompts show {delta:+.4f} RMSE delta "
-                f"({'worse' if delta > 0 else 'better'}) relative to aligned prompts."
+                f"- **Aligned vs default baseline**: "
+                f"mean RMSE `aligned`={aligned_mean:.4f} vs "
+                f"best baseline={best_baseline_mean:.4f} (averaged over matched dataset/noise groups). "
+                + ("Aligned prompts beat the best baseline." if aligned_mean < best_baseline_mean
+                   else "Best baseline is competitive with aligned prompts.")
             )
-        if not np.isnan(misleading_mean):
-            delta_m = misleading_mean - aligned_mean
-            lines.append(
-                f"- **Aligned vs misleading**: misleading prompts show {delta_m:+.4f} RMSE delta "
-                f"({'worse' if delta_m > 0 else 'better'}) relative to aligned prompts."
+
+        if not vague.empty:
+            vague_per_group = (
+                vague[["dataset_name", "noise_std", "rmse_mean"]]
+                .rename(columns={"rmse_mean": "vague_rmse"})
             )
+            merged_v = aligned_per_group.merge(
+                vague_per_group, on=["dataset_name", "noise_std"], how="inner"
+            ).dropna(subset=["aligned_rmse", "vague_rmse"])
+            if not merged_v.empty:
+                delta = float(merged_v["vague_rmse"].mean()) - float(merged_v["aligned_rmse"].mean())
+                lines.append(
+                    f"- **Aligned vs vague**: vague prompts show {delta:+.4f} RMSE delta "
+                    f"({'worse' if delta > 0 else 'better'}) relative to aligned prompts."
+                )
+
+        if not misleading.empty:
+            misleading_per_group = (
+                misleading[["dataset_name", "noise_std", "rmse_mean"]]
+                .rename(columns={"rmse_mean": "misleading_rmse"})
+            )
+            merged_m = aligned_per_group.merge(
+                misleading_per_group, on=["dataset_name", "noise_std"], how="inner"
+            ).dropna(subset=["aligned_rmse", "misleading_rmse"])
+            if not merged_m.empty:
+                delta_m = float(merged_m["misleading_rmse"].mean()) - float(merged_m["aligned_rmse"].mean())
+                lines.append(
+                    f"- **Aligned vs misleading**: misleading prompts show {delta_m:+.4f} RMSE delta "
+                    f"({'worse' if delta_m > 0 else 'better'}) relative to aligned prompts."
+                )
 
     # Failure analysis
     n_total = len(df)
