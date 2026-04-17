@@ -84,8 +84,8 @@ def fit_and_validate(
     """
     try:
         import gpytorch
-        from botorch.models.model_list_gp_regression import ModelListGP
         from botorch.fit import fit_gpytorch_mll
+        from botorch.models.model_list_gp_regression import ModelListGP
 
         if isinstance(model, ModelListGP):
             mll = gpytorch.mlls.SumMarginalLogLikelihood(model.likelihood, model)
@@ -131,7 +131,6 @@ def _compute_mll(mll, train_X: "torch.Tensor", train_Y: "torch.Tensor") -> float
     """
     try:
         from botorch.models.model_list_gp_regression import ModelListGP
-        import torch
 
         mll.train()
         if isinstance(mll.model, ModelListGP):

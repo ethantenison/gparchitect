@@ -157,7 +157,7 @@ def summarize_attempts(experiment_log: ExperimentLog) -> str:
         A multi-line string summarising each attempt and the final outcome.
     """
     lines: list[str] = [
-        f"GPArchitect Experiment Summary",
+        "GPArchitect Experiment Summary",
         f"  Instruction : {experiment_log.instruction[:100]}",
         f"  Input dim   : {experiment_log.input_dim}",
         f"  Output dim  : {experiment_log.output_dim}",

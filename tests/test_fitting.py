@@ -66,7 +66,6 @@ class TestFitAndValidateMocked:
         import torch
 
         from gparchitect.builders.builder import build_model_from_dsl
-        from gparchitect.builders.data import prepare_data
         from gparchitect.dsl.schema import FeatureGroupSpec, GPSpec, KernelSpec, KernelType, ModelClass
         from gparchitect.fitting.fitter import fit_and_validate
 

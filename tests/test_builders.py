@@ -710,11 +710,8 @@ class TestDataPrepare:
     """Tests for prepare_data (mocked pandas/torch)."""
 
     def test_prepare_data_basic(self) -> None:
-        try:
-            import pandas as pd
-            import torch
-        except ImportError:
-            pytest.skip("pandas or torch not installed")
+        pd = pytest.importorskip("pandas")
+        pytest.importorskip("torch")
 
         from gparchitect.builders.data import prepare_data
 
@@ -732,11 +729,8 @@ class TestDataPrepare:
         assert bundle.train_X[:, 1].tolist() == [0.0, 0.5, 1.0]
 
     def test_prepare_data_with_task_column(self) -> None:
-        try:
-            import pandas as pd
-            import torch
-        except ImportError:
-            pytest.skip("pandas or torch not installed")
+        pd = pytest.importorskip("pandas")
+        pytest.importorskip("torch")
 
         from gparchitect.builders.data import prepare_data
 
