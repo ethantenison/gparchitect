@@ -100,7 +100,6 @@ def _build_gpytorch_kernel(kernel_spec: KernelSpec, num_features: int):  # noqa:
     Returns:
         A gpytorch.kernels.Kernel instance.
     """
-    import gpytorch
 
     active_dims = tuple(range(num_features))
     ard_num_dims = num_features if kernel_spec.ard else None
@@ -118,9 +117,9 @@ def _build_gpytorch_kernel_with_active_dims(
     train_Y=None,  # noqa: ANN001
 ):  # noqa: ANN201
     """Construct a GPyTorch kernel from a KernelSpec and explicit active dimensions."""
+    import gpytorch
     from botorch.models.kernels.exponential_decay import ExponentialDecayKernel
     from botorch.models.kernels.infinite_width_bnn import InfiniteWidthBNNKernel
-    import gpytorch
 
     resolved_ard_num_dims = len(active_dims) if kernel_spec.ard else ard_num_dims
     lengthscale_prior = _build_gpytorch_prior(kernel_spec.lengthscale_prior)
@@ -488,7 +487,6 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
         RuntimeError: If model construction fails for any reason.
     """
     import botorch.models
-    import torch
     from botorch.models.transforms.outcome import Standardize
 
     full_X, full_Y, feature_index_map = _prepare_inputs(spec, train_X, train_Y)
@@ -628,8 +626,8 @@ def _build_multitask_default_likelihood(
     import torch
     from botorch.models.utils.gpytorch_modules import MIN_INFERRED_NOISE_LEVEL
     from gpytorch.constraints import GreaterThan
-    from gpytorch.priors.torch_priors import LogNormalPrior
     from gpytorch.likelihoods.hadamard_gaussian_likelihood import HadamardGaussianLikelihood
+    from gpytorch.priors.torch_priors import LogNormalPrior
 
     resolved_noise_prior = noise_prior or LogNormalPrior(loc=-4.0, scale=1.0)
     return HadamardGaussianLikelihood(

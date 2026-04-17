@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-
 from gparchitect.dsl.schema import (
     CompositionType,
     FeatureGroupSpec,
@@ -16,7 +14,7 @@ from gparchitect.dsl.schema import (
     NoiseSpec,
     PriorSpec,
 )
-from gparchitect.revision.revision import RevisionResult, _STRATEGIES, revise_dsl
+from gparchitect.revision.revision import _STRATEGIES, RevisionResult, revise_dsl
 
 
 def _make_spec() -> GPSpec:

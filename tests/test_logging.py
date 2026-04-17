@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import json
 
-import pytest
-
 from gparchitect.dsl.schema import FeatureGroupSpec, GPSpec, KernelSpec, KernelType, ModelClass
 from gparchitect.logging.experiment_log import AttemptRecord, ExperimentLog, summarize_attempts
 

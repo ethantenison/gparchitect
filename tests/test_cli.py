@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 from click.testing import CliRunner
+
 from gparchitect.cli import main
 from gparchitect.planning import run_prior_knowledge
 

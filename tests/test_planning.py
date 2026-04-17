@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
+
 from gparchitect import run_architect, run_architecture_focus, run_prior_knowledge
 from gparchitect.planning import parse_prior_knowledge_handoff_text
 from gparchitect.planning.models import ExtractedKnowledgeItem, PriorKnowledgeHandoff

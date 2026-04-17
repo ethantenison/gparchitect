@@ -27,6 +27,8 @@ from __future__ import annotations
 
 import logging
 
+import pandas as pd
+
 from gparchitect.builders.builder import build_model_from_dsl
 from gparchitect.builders.data import DataBundle, prepare_data
 from gparchitect.dsl.schema import GPSpec
@@ -39,8 +41,6 @@ from gparchitect.logging.experiment_log import (
 from gparchitect.revision.revision import RevisionResult, revise_dsl
 from gparchitect.translator.translator import translate_to_dsl
 from gparchitect.validation.validator import ValidationResult, validate_dsl
-
-import pandas as pd
 
 logger = logging.getLogger(__name__)
 
