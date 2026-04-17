@@ -7,8 +7,6 @@ Tests for build_model_from_dsl are skipped when botorch/torch are not installed.
 
 from __future__ import annotations
 
-from importlib.util import find_spec
-
 import pytest
 
 from gparchitect.dsl.schema import (
@@ -712,9 +710,8 @@ class TestDataPrepare:
     """Tests for prepare_data (mocked pandas/torch)."""
 
     def test_prepare_data_basic(self) -> None:
-        if find_spec("pandas") is None or find_spec("torch") is None:
-            pytest.skip("pandas or torch not installed")
-        import pandas as pd
+        pd = pytest.importorskip("pandas")
+        pytest.importorskip("torch")
 
         from gparchitect.builders.data import prepare_data
 
@@ -732,9 +729,8 @@ class TestDataPrepare:
         assert bundle.train_X[:, 1].tolist() == [0.0, 0.5, 1.0]
 
     def test_prepare_data_with_task_column(self) -> None:
-        if find_spec("pandas") is None or find_spec("torch") is None:
-            pytest.skip("pandas or torch not installed")
-        import pandas as pd
+        pd = pytest.importorskip("pandas")
+        pytest.importorskip("torch")
 
         from gparchitect.builders.data import prepare_data
 
