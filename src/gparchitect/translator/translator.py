@@ -49,6 +49,8 @@ from gparchitect.dsl.schema import (
     NoiseSpec,
     PriorDistribution,
     PriorSpec,
+    RecencyWeightingMode,
+    RecencyWeightingSpec,
     SpectralMixtureInitialization,
 )
 
@@ -70,6 +72,13 @@ _KERNEL_KEYWORDS: list[tuple[re.Pattern[str], KernelType]] = [
     (re.compile(r"\bperiodic\b", re.IGNORECASE), KernelType.PERIODIC),
     (re.compile(r"\blinear\b", re.IGNORECASE), KernelType.LINEAR),
     (re.compile(r"\bpolynomial\b", re.IGNORECASE), KernelType.POLYNOMIAL),
+    (
+        re.compile(
+            r"\bchangepoint\b|\bchange[\s\-_]?point\b|\bregime[\s\-_]?shift\b|\bregime[\s\-_]?change\b",
+            re.IGNORECASE,
+        ),
+        KernelType.CHANGEPOINT,
+    ),
 ]
 
 # ---------------------------------------------------------------------------
@@ -214,10 +223,64 @@ _UNIFORM_RANGE_PATTERN = re.compile(
     re.IGNORECASE,
 )
 
+# ---------------------------------------------------------------------------
+# Changepoint-specific patterns
+# ---------------------------------------------------------------------------
+_CHANGEPOINT_LOCATION_PATTERN = re.compile(
+    r"\b(?:at|location|loc|switches?\s+at|changes?\s+at|changepoint\s+at|before[/\s]+after)\s+"
+    r"(?:t(?:ime)?\s*=?\s*)?(-?[0-9]*\.?[0-9]+)\b",
+    re.IGNORECASE,
+)
+_CHANGEPOINT_STEEPNESS_PATTERN = re.compile(
+    r"\bsteepness\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Recency weighting patterns
+# ---------------------------------------------------------------------------
+_SLIDING_WINDOW_PATTERN = re.compile(
+    r"\b(?:sliding[\s\-_]?window|time[\s\-_]?window|recent\s+window|window[\s\-_]?size)\b",
+    re.IGNORECASE,
+)
+_EXPONENTIAL_DISCOUNT_PATTERN = re.compile(
+    r"\b(?:exponential[\s\-_]?(?:discount|decay|forget(?:ting)?)|forgetting|"
+    r"down[\s\-_]?weight(?:ing)?|recency[\s\-_]?weight(?:ing)?|forget(?:ting)?\s+old)\b",
+    re.IGNORECASE,
+)
+_WINDOW_SIZE_PATTERN = re.compile(
+    r"\b(?:window(?:\s+size)?|last)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
+    re.IGNORECASE,
+)
+_DISCOUNT_RATE_PATTERN = re.compile(
+    r"\b(?:discount[\s\-_]?rate|decay[\s\-_]?rate|lambda|rate)\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b",
+    re.IGNORECASE,
+)
+_TIME_FEATURE_PATTERN = re.compile(
+    r"\b(?:time[\s\-_]?(?:feature|column|index|col)|time)\s*(?:=|index|col(?:umn)?)?\s*(\d+)\b",
+    re.IGNORECASE,
+)
+
 
 def _extract_rq_alpha(instruction: str) -> float | None:
     """Extract an optional RQ alpha value from an instruction fragment."""
     match = _RQ_ALPHA_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _extract_changepoint_location(instruction: str) -> float | None:
+    """Extract an optional changepoint location from an instruction fragment."""
+    match = _CHANGEPOINT_LOCATION_PATTERN.search(instruction)
+    if match is None:
+        return None
+    return float(match.group(1))
+
+
+def _extract_changepoint_steepness(instruction: str) -> float | None:
+    """Extract an optional changepoint steepness from an instruction fragment."""
+    match = _CHANGEPOINT_STEEPNESS_PATTERN.search(instruction)
     if match is None:
         return None
     return float(match.group(1))
@@ -280,6 +343,107 @@ def _extract_power(instruction: str) -> float | None:
     return float(match.group(1))
 
 
+def _detect_recency_weighting(
+    instruction: str,
+    input_dim: int,
+    input_feature_names: list[str] | None,
+) -> RecencyWeightingSpec | None:
+    """Detect an optional recency-weighting specification from an instruction.
+
+    Args:
+        instruction: Free-text instruction string.
+        input_dim: Total number of input features (excluding task column).
+        input_feature_names: Optional list of continuous feature column names.
+
+    Returns:
+        A RecencyWeightingSpec if recency weighting was requested, otherwise None.
+    """
+    has_sliding = _SLIDING_WINDOW_PATTERN.search(instruction) is not None
+    has_discount = _EXPONENTIAL_DISCOUNT_PATTERN.search(instruction) is not None
+
+    if not has_sliding and not has_discount:
+        return None
+
+    # Determine the time feature index: explicit number, or "time" column name, or default to 0.
+    time_feature_index = 0
+    tf_match = _TIME_FEATURE_PATTERN.search(instruction)
+    if tf_match is not None:
+        time_feature_index = int(tf_match.group(1))
+    elif input_feature_names:
+        for idx, name in enumerate(input_feature_names):
+            if re.search(r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b",
+                         name, re.IGNORECASE):
+                time_feature_index = idx
+                break
+
+    # Clamp to valid range
+    time_feature_index = max(0, min(time_feature_index, input_dim - 1))
+
+    if has_sliding:
+        window_size: float | None = None
+        ws_match = _WINDOW_SIZE_PATTERN.search(instruction)
+        if ws_match is not None:
+            window_size = float(ws_match.group(1))
+        else:
+            window_size = 0.5  # default: half of the (scaled) feature range
+        return RecencyWeightingSpec(
+            mode=RecencyWeightingMode.SLIDING_WINDOW,
+            time_feature_index=time_feature_index,
+            window_size=window_size,
+        )
+
+    # Exponential discount
+    discount_rate: float | None = None
+    dr_match = _DISCOUNT_RATE_PATTERN.search(instruction)
+    if dr_match is not None:
+        discount_rate = float(dr_match.group(1))
+    else:
+        discount_rate = 1.0  # default rate
+    return RecencyWeightingSpec(
+        mode=RecencyWeightingMode.EXPONENTIAL_DISCOUNT,
+        time_feature_index=time_feature_index,
+        discount_rate=discount_rate,
+    )
+
+
+def _build_changepoint_kernel_spec(
+    instruction: str,
+    *,
+    ard_instruction: str | None = None,
+) -> KernelSpec:
+    """Build a Changepoint KernelSpec with two default sub-kernels.
+
+    The translator generates a Matern52 before-kernel and an RBF after-kernel
+    as a neutral default.  Users can customise by specifying 'before' and 'after'
+    kernels explicitly (not yet parsed in v1 — fixed defaults are used instead).
+
+    Args:
+        instruction: The instruction fragment surrounding the changepoint mention.
+        ard_instruction: Source text used to determine ARD for child kernels.
+
+    Returns:
+        A KernelSpec with kernel_type=CHANGEPOINT and 2 children.
+    """
+    location = _extract_changepoint_location(instruction)
+    steepness = _extract_changepoint_steepness(instruction)
+
+    child_ard_source = ard_instruction if ard_instruction is not None else instruction
+    before_kernel = KernelSpec(
+        kernel_type=KernelType.MATERN_52,
+        ard=_resolve_ard_setting(child_ard_source, KernelType.MATERN_52),
+    )
+    after_kernel = KernelSpec(
+        kernel_type=KernelType.RBF,
+        ard=_resolve_ard_setting(child_ard_source, KernelType.RBF),
+    )
+    return KernelSpec(
+        kernel_type=KernelType.CHANGEPOINT,
+        changepoint_location=location,
+        changepoint_steepness=steepness,
+        children=[before_kernel, after_kernel],
+    )
+
+
 def _build_kernel_spec(
     instruction: str,
     kernel_type: KernelType,
@@ -287,6 +451,9 @@ def _build_kernel_spec(
     ard_instruction: str | None = None,
 ) -> KernelSpec:
     """Build a kernel spec with any kernel-specific parameters parsed from text."""
+    if kernel_type == KernelType.CHANGEPOINT:
+        return _build_changepoint_kernel_spec(instruction, ard_instruction=ard_instruction)
+
     ard_source = instruction if ard_instruction is None else ard_instruction
     ard = True if kernel_type == KernelType.SPECTRAL_MIXTURE else _resolve_ard_setting(ard_source, kernel_type)
     kernel_spec = KernelSpec(kernel_type=kernel_type, ard=ard)
@@ -593,6 +760,7 @@ def translate_to_dsl(
     _apply_detected_priors(instruction, default_kernel_spec, noise)
     feature_groups = _extract_feature_groups(instruction, input_feature_names)
     mean, output_means = _detect_means(instruction, model_class, output_dim)
+    recency_weighting = _detect_recency_weighting(instruction, input_dim, input_feature_names)
 
     resolved_task_values = task_values
 
@@ -635,13 +803,20 @@ def translate_to_dsl(
         f"model={model_class.value}, kernel={kernel_type.value}, ard={use_ard}, groups={len(feature_groups)}"
     )
 
+    base_execution = _default_execution_spec(model_class)
+    execution = ExecutionSpec(
+        input_scaling=base_execution.input_scaling,
+        outcome_standardization=base_execution.outcome_standardization,
+        recency_weighting=recency_weighting,
+    )
+
     spec = GPSpec(
         model_class=model_class,
         feature_groups=feature_groups,
         mean=mean,
         output_means=output_means,
         noise=noise,
-        execution=_default_execution_spec(model_class),
+        execution=execution,
         input_dim=input_dim,
         output_dim=output_dim,
         task_feature_index=task_feature_index,
