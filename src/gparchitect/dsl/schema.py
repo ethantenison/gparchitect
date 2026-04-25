@@ -13,7 +13,7 @@ Inputs:
 
 Outputs:
     Pydantic model classes: GPSpec, KernelSpec, FeatureGroupSpec, PriorSpec, NoiseSpec,
-    MeanSpec, ExecutionSpec.
+    MeanSpec, ExecutionSpec, RecencyWeightingSpec.
 
 Non-obvious design decisions:
     - All fields use native Python typing (list, dict, X | None) per project style.
@@ -21,6 +21,11 @@ Non-obvious design decisions:
     - Enums for kernel types and model classes ensure stability across versions.
     - DSL is independent of natural-language phrasing; identical GP architectures
       must always produce identical DSL regardless of how they are described.
+    - RecencyWeightingSpec is nested inside ExecutionSpec to keep data/fitting
+      concerns separate from kernel/model concerns.
+    - heteroskedastic_noise is a forward-compatibility placeholder in NoiseSpec:
+      it is currently rejected by the validator, but its presence in the schema
+      prevents DSL churn when Tier 2 heteroskedastic support is added.
 
 What this module does NOT do:
     - It does not validate dimensional or semantic consistency (see validation module).
@@ -57,6 +62,7 @@ class KernelType(str, Enum):
     SPECTRAL_MIXTURE = "SpectralMixture"
     INFINITE_WIDTH_BNN = "InfiniteWidthBNN"
     EXPONENTIAL_DECAY = "ExponentialDecay"
+    CHANGEPOINT = "Changepoint"
 
 
 class SpectralMixtureInitialization(str, Enum):
@@ -105,16 +111,60 @@ class PriorSpec(BaseModel):
     params: dict[str, float] = Field(default_factory=dict)
 
 
+class RecencyWeightingMode(str, Enum):
+    """Supported recency-weighting strategies for time-driven non-stationarity.
+
+    SLIDING_WINDOW: Keep only observations within a fixed time window ending at the
+        most recent observation.  Older observations are discarded entirely.
+    EXPONENTIAL_DISCOUNT: Keep all observations but discard those whose exponential
+        weight falls below a minimum threshold.  This is equivalent to a soft
+        sliding window with a smooth boundary.
+    """
+
+    SLIDING_WINDOW = "sliding_window"
+    EXPONENTIAL_DISCOUNT = "exponential_discount"
+
+
+class RecencyWeightingSpec(BaseModel):
+    """Specification for recency-based downweighting of stale observations.
+
+    Used to model time-driven non-stationarity by reducing the effective influence
+    of older data points.
+
+    Attributes:
+        mode: The weighting strategy to apply.
+        time_feature_index: Zero-based column index of the time-like feature in train_X
+            that determines observation recency.
+        window_size: For SLIDING_WINDOW — width of the time window in the (possibly
+            scaled) feature space.  Observations older than max_time − window_size
+            are dropped.  Must be > 0.
+        discount_rate: For EXPONENTIAL_DISCOUNT — rate λ in w_i = exp(−λ · Δt_i).
+            Observations with w_i < min_weight are dropped.  Must be > 0.
+        min_weight: Minimum observation weight below which observations are discarded
+            in EXPONENTIAL_DISCOUNT mode.  Defaults to 0.01.  Must be in (0, 1).
+    """
+
+    mode: RecencyWeightingMode
+    time_feature_index: int
+    window_size: float | None = None
+    discount_rate: float | None = None
+    min_weight: float = 0.01
+
+
 class ExecutionSpec(BaseModel):
     """Execution semantics that affect how a validated DSL is run.
 
     Attributes:
         input_scaling: Whether continuous inputs are min-max scaled before model building.
         outcome_standardization: Whether BoTorch outcome transforms standardize outputs where supported.
+        recency_weighting: Optional recency-weighting configuration for time-driven
+            non-stationarity.  When set, old observations are filtered or downweighted
+            before fitting.
     """
 
     input_scaling: bool = True
     outcome_standardization: bool = True
+    recency_weighting: RecencyWeightingSpec | None = None
 
 
 class NoiseSpec(BaseModel):
@@ -124,11 +174,16 @@ class NoiseSpec(BaseModel):
         fixed: Whether the noise level is fixed (not optimised).
         noise_value: Fixed noise variance value; None means learnable.
         prior: Optional prior on the noise variance.
+        heteroskedastic_noise: Design-guardrail placeholder for future heteroskedastic
+            (input- or time-dependent) noise support.  Currently unsupported — the
+            validator rejects specs with this flag set to True.  Set to False (default)
+            to use the standard homoskedastic noise model.
     """
 
     fixed: bool = False
     noise_value: float | None = None
     prior: PriorSpec | None = None
+    heteroskedastic_noise: bool = False
 
 
 class MeanSpec(BaseModel):
@@ -161,6 +216,12 @@ class KernelSpec(BaseModel):
         bnn_depth: Optional depth for the Infinite Width BNN kernel.
         exponential_decay_power: Optional fixed initialization value for the ExponentialDecay power.
         exponential_decay_offset: Optional fixed initialization value for the ExponentialDecay offset.
+        changepoint_location: Initial value for the changepoint location parameter (for
+            Changepoint kernel only).  This is a value in the (possibly scaled) feature
+            space of the designated time-like input.  Must be finite.
+        changepoint_steepness: Initial value for the sigmoid steepness at the changepoint
+            (for Changepoint kernel only).  Controls how sharply the kernel transitions
+            between the before and after regimes.  Must be > 0.  Defaults to 1.0.
     """
 
     kernel_type: KernelType
@@ -179,6 +240,8 @@ class KernelSpec(BaseModel):
     bnn_depth: int | None = None
     exponential_decay_power: float | None = None
     exponential_decay_offset: float | None = None
+    changepoint_location: float | None = None
+    changepoint_steepness: float | None = None
 
 
 class FeatureGroupSpec(BaseModel):

@@ -195,6 +195,43 @@ def _build_gpytorch_kernel_with_active_dims(
         KernelType.EXPONENTIAL_DECAY: lambda: ExponentialDecayKernel(active_dims=active_dims),
     }
 
+    # Changepoint kernel is handled separately because it requires two child kernels
+    # built recursively and passed to the ChangepointKernel constructor.
+    if kernel_spec.kernel_type == KernelType.CHANGEPOINT:
+        from gparchitect.builders.changepoint_kernel import ChangepointKernel
+
+        if len(kernel_spec.children) != 2:  # noqa: PLR2004
+            raise ValueError(
+                f"Changepoint kernel requires exactly 2 children (before/after kernels), "
+                f"got {len(kernel_spec.children)}."
+            )
+        k_before = _build_gpytorch_kernel_with_active_dims(
+            kernel_spec.children[0],
+            active_dims,
+            wrap_in_scale=False,
+            train_X=train_X,
+            train_Y=train_Y,
+        )
+        k_after = _build_gpytorch_kernel_with_active_dims(
+            kernel_spec.children[1],
+            active_dims,
+            wrap_in_scale=False,
+            train_X=train_X,
+            train_Y=train_Y,
+        )
+        location = kernel_spec.changepoint_location if kernel_spec.changepoint_location is not None else 0.5
+        steepness = kernel_spec.changepoint_steepness if kernel_spec.changepoint_steepness is not None else 1.0
+        base_kernel = ChangepointKernel(
+            kernel_before=k_before,
+            kernel_after=k_after,
+            changepoint_location=location,
+            changepoint_steepness=steepness,
+            active_dims=active_dims,
+        )
+        if wrap_in_scale:
+            return gpytorch.kernels.ScaleKernel(base_kernel, outputscale_prior=outputscale_prior)
+        return base_kernel
+
     if kernel_spec.kernel_type not in kernel_map:
         logger.warning("Unknown kernel type %s; falling back to Matern52.", kernel_spec.kernel_type)
         base_kernel = gpytorch.kernels.MaternKernel(
