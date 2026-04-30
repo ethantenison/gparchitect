@@ -103,7 +103,7 @@ class _TimeVaryingOutputscaleKernel:
                 super().__init__()
                 self.base_kernel = base_kernel
                 self.time_feature_index = time_feature_index
-                # Initialise bias to 0 and slope to 0 → s(t) starts at softplus(0) ≈ 0.693
+                # Initialize bias to 0 and slope to 0 → s(t) starts at softplus(0) ≈ 0.693
                 self.register_parameter(
                     "raw_tv_bias", torch.nn.Parameter(torch.zeros(1))
                 )
