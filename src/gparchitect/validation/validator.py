@@ -40,6 +40,7 @@ from gparchitect.dsl.schema import (
     ModelClass,
     PriorDistribution,
     PriorSpec,
+    RecencyWeightingMode,
     SpectralMixtureInitialization,
 )
 
@@ -254,6 +255,23 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
                 f"got {kernel.exponential_decay_offset}."
             )
 
+    if kernel.kernel_type == KernelType.CHANGEPOINT:
+        if feature_count != 1:
+            result.errors.append(
+                f"Feature group '{group_name}': Changepoint kernel requires exactly one active feature "
+                f"(a time-like input), got {feature_count}."
+            )
+        if len(kernel.children) != 2:  # noqa: PLR2004
+            result.errors.append(
+                f"Feature group '{group_name}': Changepoint kernel requires exactly 2 children "
+                f"(before and after kernels), got {len(kernel.children)}."
+            )
+        if kernel.changepoint_steepness is not None and kernel.changepoint_steepness <= 0:
+            result.errors.append(
+                f"Feature group '{group_name}': Changepoint steepness must be > 0, "
+                f"got {kernel.changepoint_steepness}."
+            )
+
     for child in kernel.children:
         _check_kernel_spec(group_name, child, feature_count, result)
 
@@ -325,11 +343,52 @@ def _check_noise(spec: GPSpec, result: ValidationResult) -> None:
         result.errors.append(f"noise.noise_value must be non-negative, got {spec.noise.noise_value}.")
     if spec.noise.fixed and spec.noise.prior is not None:
         result.errors.append("noise.prior is not supported when noise.fixed=True.")
+    if spec.noise.heteroskedastic_noise:
+        result.errors.append(
+            "noise.heteroskedastic_noise=True is not yet supported. "
+            "Heteroskedastic noise is a planned Tier 2 feature. "
+            "Set noise.heteroskedastic_noise=False (default) to use the standard homoskedastic noise model."
+        )
 
 
 def _check_execution(spec: GPSpec, result: ValidationResult) -> None:
     if spec.model_class == ModelClass.MULTI_TASK_GP and spec.execution.outcome_standardization:
         result.errors.append("MultiTaskGP does not support outcome_standardization in the current contract.")
+
+    rw = spec.execution.recency_weighting
+    if rw is not None:
+        if rw.time_feature_index < 0 or rw.time_feature_index >= spec.input_dim:
+            result.errors.append(
+                f"recency_weighting.time_feature_index={rw.time_feature_index} is out of range "
+                f"for input_dim={spec.input_dim}."
+            )
+        if spec.task_feature_index is not None and rw.time_feature_index == spec.task_feature_index:
+            result.errors.append(
+                f"recency_weighting.time_feature_index={rw.time_feature_index} must not be the "
+                "task feature index."
+            )
+        if rw.mode == RecencyWeightingMode.SLIDING_WINDOW:
+            if rw.window_size is None:
+                result.errors.append(
+                    "recency_weighting.window_size must be set when mode=sliding_window."
+                )
+            elif rw.window_size <= 0:
+                result.errors.append(
+                    f"recency_weighting.window_size must be > 0, got {rw.window_size}."
+                )
+        if rw.mode == RecencyWeightingMode.EXPONENTIAL_DISCOUNT:
+            if rw.discount_rate is None:
+                result.errors.append(
+                    "recency_weighting.discount_rate must be set when mode=exponential_discount."
+                )
+            elif rw.discount_rate <= 0:
+                result.errors.append(
+                    f"recency_weighting.discount_rate must be > 0, got {rw.discount_rate}."
+                )
+        if rw.min_weight is not None and not (0 < rw.min_weight < 1):
+            result.errors.append(
+                f"recency_weighting.min_weight must be in (0, 1), got {rw.min_weight}."
+            )
 
 
 def _check_priors(spec: GPSpec, result: ValidationResult) -> None:
