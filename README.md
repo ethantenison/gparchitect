@@ -97,6 +97,65 @@ the independent output models rather than fabricating separate per-output covari
 For `MultiTaskGP`, the DSL now requires an explicit `task_values` domain before validation
 and model building proceed.
 
+## Time-driven non-stationarity
+
+GPArchitect supports several mechanisms for handling data where the GP behavior changes
+over time.  Each has a distinct scope and limitation.
+
+### Changepoint kernel (Tier 1)
+
+Use a `changepoint kernel` or `regime shift` phrase to request a kernel that transitions
+between two sub-kernels at a time location.  The transition is parameterized by a sigmoid
+with learnable location and steepness.  This is a full GP kernel — it participates in
+the likelihood.
+
+### Recency filtering (Tier 1)
+
+Use `sliding window`, `exponential forgetting`, or `exponential discount` phrases to
+discard stale observations before fitting.
+
+**Important**: this is dataset truncation, not true observation-weighted GP inference.
+Old observations are removed; the remaining observations are treated with equal weight.
+
+- `sliding window of 0.4`: removes observations older than `max_time − 0.4`.
+- `exponential forgetting with rate 2.0`: removes observations whose
+  `exp(−rate · Δt) < min_weight` (default `min_weight=0.01`).
+
+Both modes operate in the (possibly scaled) feature space.  Enable input scaling
+(the default) for the window sizes and rates to be interpretable in a `[0, 1]` range.
+
+### Time-varying hyperparameters (Tier 2)
+
+Use `time-varying outputscale`, `amplitude changes over time`, `time-varying lengthscale`,
+or `lengthscale changes over time` to request a kernel whose outputscale or lengthscale
+varies smoothly with a time-like input.
+
+The implementation wraps any base kernel with a learned linear modulation:
+`h(t) = softplus(bias + slope · t)`.  Two additional learnable parameters per kernel
+(bias, slope) are optimized jointly with the kernel hyperparameters.
+
+- `time-varying outputscale`: amplitude varies as `s(t_i) · k(x_i, x_j) · s(t_j)`.
+- `time-varying lengthscale`: the time dimension is rescaled by `1 / l(t)` before
+  kernel evaluation.
+
+### Input warping (Tier 2)
+
+Use `warp time`, `warped time axis`, `nonlinear time warp`, or `input warping` to
+apply a Kumaraswamy CDF warp to the time-like input dimension before kernel evaluation.
+The warp is monotone and maps the input through a learnable smooth nonlinearity.
+
+The warp uses BoTorch's built-in `Warp` input transform and is optimized jointly with
+the kernel hyperparameters.  Concentration parameters can be fixed at construction by
+passing `concentration0` and `concentration1` to `InputWarpingSpec`.
+
+Input scaling should be enabled (the default) for the Kumaraswamy warp to operate
+correctly in the `[0, 1]` range.
+
+### Heteroskedastic noise (planned, not yet supported)
+
+The `heteroskedastic_noise` field exists in the DSL for forward compatibility but is
+rejected by the validator.  Support for input-dependent noise is a planned future tier.
+
 ## CLI
 
 ```bash

@@ -13,7 +13,7 @@ Inputs:
 
 Outputs:
     Pydantic model classes: GPSpec, KernelSpec, FeatureGroupSpec, PriorSpec, NoiseSpec,
-    MeanSpec, ExecutionSpec, RecencyWeightingSpec.
+    MeanSpec, ExecutionSpec, RecencyFilteringSpec, TimeVaryingSpec, InputWarpingSpec.
 
 Non-obvious design decisions:
     - All fields use native Python typing (list, dict, X | None) per project style.
@@ -21,11 +21,22 @@ Non-obvious design decisions:
     - Enums for kernel types and model classes ensure stability across versions.
     - DSL is independent of natural-language phrasing; identical GP architectures
       must always produce identical DSL regardless of how they are described.
-    - RecencyWeightingSpec is nested inside ExecutionSpec to keep data/fitting
-      concerns separate from kernel/model concerns.
+    - RecencyFilteringSpec is nested inside ExecutionSpec to keep data/fitting
+      concerns separate from kernel/model concerns.  The canonical name is
+      "recency filtering" — earlier versions used "recency weighting", which was
+      misleading because the implementation is dataset truncation (filtering), not
+      true observation-weighted GP inference.
     - heteroskedastic_noise is a forward-compatibility placeholder in NoiseSpec:
       it is currently rejected by the validator, but its presence in the schema
-      prevents DSL churn when Tier 2 heteroskedastic support is added.
+      prevents DSL churn when heteroskedastic support is added in a future tier.
+    - TimeVaryingSpec in KernelSpec represents Tier 2 time-varying hyperparameters:
+      the kernel's outputscale or lengthscale varies smoothly as a function of a
+      designated time-like input.  The builder wraps the base kernel in a custom
+      GPyTorch module that adds learnable linear-modulation parameters.
+    - InputWarpingSpec in ExecutionSpec represents Tier 2 input warping: a
+      monotone Kumaraswamy CDF warp is applied to the designated time-like input
+      dimension before the kernel is evaluated.  BoTorch's Warp input transform
+      is used directly for compatibility with the existing fitting path.
 
 What this module does NOT do:
     - It does not validate dimensional or semantic consistency (see validation module).
@@ -111,28 +122,38 @@ class PriorSpec(BaseModel):
     params: dict[str, float] = Field(default_factory=dict)
 
 
-class RecencyWeightingMode(str, Enum):
-    """Supported recency-weighting strategies for time-driven non-stationarity.
+class RecencyFilteringMode(str, Enum):
+    """Supported recency-filtering strategies for time-driven non-stationarity.
+
+    Both strategies reduce the training dataset to a subset of recent observations
+    before model fitting.  Neither performs true likelihood-weighted GP inference —
+    they are dataset-truncation approximations.
 
     SLIDING_WINDOW: Keep only observations within a fixed time window ending at the
-        most recent observation.  Older observations are discarded entirely.
-    EXPONENTIAL_DISCOUNT: Keep all observations but discard those whose exponential
-        weight falls below a minimum threshold.  This is equivalent to a soft
-        sliding window with a smooth boundary.
+        most recent observation.  Observations outside the window are removed entirely.
+    EXPONENTIAL_DISCOUNT: Compute a weight w_i = exp(−λ · Δt_i) per observation.
+        Observations with w_i < min_weight are removed.  This is a thresholded-
+        retention rule, not true exponential likelihood weighting.
     """
 
     SLIDING_WINDOW = "sliding_window"
     EXPONENTIAL_DISCOUNT = "exponential_discount"
 
 
-class RecencyWeightingSpec(BaseModel):
-    """Specification for recency-based downweighting of stale observations.
+class RecencyFilteringSpec(BaseModel):
+    """Specification for recency-based filtering of stale observations.
 
-    Used to model time-driven non-stationarity by reducing the effective influence
-    of older data points.
+    Implements Tier 1 time-driven non-stationarity by discarding old observations
+    before fitting.  This is dataset truncation — it is NOT true observation-
+    weighted GP inference.
+
+    - SLIDING_WINDOW mode removes observations older than max_time − window_size.
+    - EXPONENTIAL_DISCOUNT mode removes observations whose weight exp(−λ·Δt) falls
+      below min_weight.  This is equivalent to a soft sliding window with a smooth
+      boundary, not a probabilistic weighting of the likelihood.
 
     Attributes:
-        mode: The weighting strategy to apply.
+        mode: The filtering strategy to apply.
         time_feature_index: Zero-based column index of the time-like feature in train_X
             that determines observation recency.
         window_size: For SLIDING_WINDOW — width of the time window in the (possibly
@@ -140,15 +161,98 @@ class RecencyWeightingSpec(BaseModel):
             are dropped.  Must be > 0.
         discount_rate: For EXPONENTIAL_DISCOUNT — rate λ in w_i = exp(−λ · Δt_i).
             Observations with w_i < min_weight are dropped.  Must be > 0.
-        min_weight: Minimum observation weight below which observations are discarded
-            in EXPONENTIAL_DISCOUNT mode.  Defaults to 0.01.  Must be in (0, 1).
+        min_weight: Minimum retention weight threshold for EXPONENTIAL_DISCOUNT mode.
+            Defaults to 0.01.  Must be in (0, 1).
     """
 
-    mode: RecencyWeightingMode
+    mode: RecencyFilteringMode
     time_feature_index: int
     window_size: float | None = None
     discount_rate: float | None = None
     min_weight: float = 0.01
+
+
+class TimeVaryingTarget(str, Enum):
+    """Which kernel hyperparameter varies with the designated time-like input.
+
+    OUTPUTSCALE: The kernel amplitude (outputscale) changes smoothly over time.
+        The builder wraps the base kernel so that its effective outputscale is
+        s(t) = softplus(bias + slope · t), with learnable bias and slope.
+    LENGTHSCALE: The effective lengthscale along the time dimension changes over
+        time.  The builder rescales the time feature by 1 / l(t) before passing
+        it to the base kernel, where l(t) = softplus(bias + slope · t).
+    """
+
+    OUTPUTSCALE = "outputscale"
+    LENGTHSCALE = "lengthscale"
+
+
+class TimeVaryingSpec(BaseModel):
+    """Tier 2 specification for a kernel with time-varying hyperparameters.
+
+    Attaches a learned linear modulation to a kernel's outputscale or lengthscale
+    as a function of a designated time-like input dimension.  Parameterization is
+    a softplus-transformed linear function of time to guarantee positivity.
+
+    The builder wraps the base kernel (specified by the parent KernelSpec) in a
+    TimeVaryingKernel module.  The two learnable parameters (bias, slope) are
+    optimized alongside the rest of the GP hyperparameters.
+
+    This is intentionally a conservative first implementation:
+    - Only one smooth parametric modulation per kernel is supported.
+    - Only "linear" parameterization is supported in v1.
+    - Multi-output or multi-task time variation is not yet supported.
+
+    Attributes:
+        target: Whether the outputscale or lengthscale varies with time.
+        time_feature_index: Zero-based column index of the time-like feature.
+        parameterization: The functional form of the time dependence.
+            Currently only "linear" is supported.
+    """
+
+    target: TimeVaryingTarget
+    time_feature_index: int
+    parameterization: str = "linear"
+
+
+class WarpType(str, Enum):
+    """Supported input-warping transformations for time-like inputs.
+
+    KUMARASWAMY: Applies the Kumaraswamy CDF as a monotone warp to map
+        inputs in [0, 1] → [0, 1] with learnable concentration parameters.
+        This is the BoTorch-native warp via botorch.models.transforms.input.Warp.
+    """
+
+    KUMARASWAMY = "kumaraswamy"
+
+
+class InputWarpingSpec(BaseModel):
+    """Tier 2 specification for input warping on a designated time-like feature.
+
+    Applies a monotone parametric transformation to the time-like input dimension
+    before kernel evaluation.  The warping is explicit in the DSL and applied as a
+    BoTorch input transform.  Both the warp parameters and the kernel hyperparameters
+    are optimized jointly.
+
+    Requirements on the input:
+    - The time-like feature should be normalized to [0, 1] (i.e., input scaling
+      should be enabled in ExecutionSpec) for the Kumaraswamy warp to map correctly.
+
+    Attributes:
+        warp_type: The warping family.  Currently only KUMARASWAMY is supported.
+        time_feature_index: Zero-based column index of the time-like feature to warp.
+        concentration0: Optional fixed initialization for the first Kumaraswamy
+            concentration parameter (a > 0).  When None, BoTorch initializes
+            the parameter to a learnable default.
+        concentration1: Optional fixed initialization for the second Kumaraswamy
+            concentration parameter (b > 0).  When None, BoTorch initializes
+            the parameter to a learnable default.
+    """
+
+    warp_type: WarpType = WarpType.KUMARASWAMY
+    time_feature_index: int
+    concentration0: float | None = None
+    concentration1: float | None = None
 
 
 class ExecutionSpec(BaseModel):
@@ -157,14 +261,18 @@ class ExecutionSpec(BaseModel):
     Attributes:
         input_scaling: Whether continuous inputs are min-max scaled before model building.
         outcome_standardization: Whether BoTorch outcome transforms standardize outputs where supported.
-        recency_weighting: Optional recency-weighting configuration for time-driven
-            non-stationarity.  When set, old observations are filtered or downweighted
-            before fitting.
+        recency_filtering: Optional recency-filtering configuration for time-driven
+            non-stationarity.  When set, old observations are removed from the training
+            set before fitting.  This is dataset truncation, not likelihood weighting.
+        input_warping: Optional Tier 2 input-warping configuration.  When set, the
+            designated time-like feature dimension is transformed by a monotone warp
+            before kernel evaluation.
     """
 
     input_scaling: bool = True
     outcome_standardization: bool = True
-    recency_weighting: RecencyWeightingSpec | None = None
+    recency_filtering: RecencyFilteringSpec | None = None
+    input_warping: InputWarpingSpec | None = None
 
 
 class NoiseSpec(BaseModel):
@@ -222,6 +330,12 @@ class KernelSpec(BaseModel):
         changepoint_steepness: Initial value for the sigmoid steepness at the changepoint
             (for Changepoint kernel only).  Controls how sharply the kernel transitions
             between the before and after regimes.  Must be > 0.  Defaults to 1.0.
+        time_varying: Optional Tier 2 time-varying hyperparameter specification.  When
+            set, the builder wraps this kernel in a TimeVaryingKernel module that adds
+            a learned smooth modulation over the designated time-like input.  The base
+            kernel is built from the other fields of this KernelSpec (kernel_type,
+            ard, etc.) and then wrapped.  Cannot be combined with composed kernels
+            (children must be empty).
     """
 
     kernel_type: KernelType
@@ -242,6 +356,7 @@ class KernelSpec(BaseModel):
     exponential_decay_offset: float | None = None
     changepoint_location: float | None = None
     changepoint_steepness: float | None = None
+    time_varying: TimeVaryingSpec | None = None
 
 
 class FeatureGroupSpec(BaseModel):

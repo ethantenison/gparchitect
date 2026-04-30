@@ -40,7 +40,7 @@ from gparchitect.dsl.schema import (
     ModelClass,
     PriorDistribution,
     PriorSpec,
-    RecencyWeightingMode,
+    RecencyFilteringMode,
     SpectralMixtureInitialization,
 )
 
@@ -272,6 +272,24 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
                 f"got {kernel.changepoint_steepness}."
             )
 
+    if kernel.time_varying is not None:
+        tv = kernel.time_varying
+        if tv.parameterization != "linear":
+            result.errors.append(
+                f"Feature group '{group_name}': time_varying.parameterization must be 'linear', "
+                f"got '{tv.parameterization}'."
+            )
+        if tv.time_feature_index < 0:
+            result.errors.append(
+                f"Feature group '{group_name}': time_varying.time_feature_index must be >= 0, "
+                f"got {tv.time_feature_index}."
+            )
+        if kernel.children:
+            result.errors.append(
+                f"Feature group '{group_name}': time_varying is not supported on composed kernels "
+                "(kernels with children).  Set time_varying on a leaf kernel."
+            )
+
     for child in kernel.children:
         _check_kernel_spec(group_name, child, feature_count, result)
 
@@ -355,39 +373,59 @@ def _check_execution(spec: GPSpec, result: ValidationResult) -> None:
     if spec.model_class == ModelClass.MULTI_TASK_GP and spec.execution.outcome_standardization:
         result.errors.append("MultiTaskGP does not support outcome_standardization in the current contract.")
 
-    rw = spec.execution.recency_weighting
-    if rw is not None:
-        if rw.time_feature_index < 0 or rw.time_feature_index >= spec.input_dim:
+    rf = spec.execution.recency_filtering
+    if rf is not None:
+        if rf.time_feature_index < 0 or rf.time_feature_index >= spec.input_dim:
             result.errors.append(
-                f"recency_weighting.time_feature_index={rw.time_feature_index} is out of range "
+                f"recency_filtering.time_feature_index={rf.time_feature_index} is out of range "
                 f"for input_dim={spec.input_dim}."
             )
-        if spec.task_feature_index is not None and rw.time_feature_index == spec.task_feature_index:
+        if spec.task_feature_index is not None and rf.time_feature_index == spec.task_feature_index:
             result.errors.append(
-                f"recency_weighting.time_feature_index={rw.time_feature_index} must not be the "
+                f"recency_filtering.time_feature_index={rf.time_feature_index} must not be the "
                 "task feature index."
             )
-        if rw.mode == RecencyWeightingMode.SLIDING_WINDOW:
-            if rw.window_size is None:
+        if rf.mode == RecencyFilteringMode.SLIDING_WINDOW:
+            if rf.window_size is None:
                 result.errors.append(
-                    "recency_weighting.window_size must be set when mode=sliding_window."
+                    "recency_filtering.window_size must be set when mode=sliding_window."
                 )
-            elif rw.window_size <= 0:
+            elif rf.window_size <= 0:
                 result.errors.append(
-                    f"recency_weighting.window_size must be > 0, got {rw.window_size}."
+                    f"recency_filtering.window_size must be > 0, got {rf.window_size}."
                 )
-        if rw.mode == RecencyWeightingMode.EXPONENTIAL_DISCOUNT:
-            if rw.discount_rate is None:
+        if rf.mode == RecencyFilteringMode.EXPONENTIAL_DISCOUNT:
+            if rf.discount_rate is None:
                 result.errors.append(
-                    "recency_weighting.discount_rate must be set when mode=exponential_discount."
+                    "recency_filtering.discount_rate must be set when mode=exponential_discount."
                 )
-            elif rw.discount_rate <= 0:
+            elif rf.discount_rate <= 0:
                 result.errors.append(
-                    f"recency_weighting.discount_rate must be > 0, got {rw.discount_rate}."
+                    f"recency_filtering.discount_rate must be > 0, got {rf.discount_rate}."
                 )
-        if rw.min_weight is not None and not (0 < rw.min_weight < 1):
+        if rf.min_weight is not None and not (0 < rf.min_weight < 1):
             result.errors.append(
-                f"recency_weighting.min_weight must be in (0, 1), got {rw.min_weight}."
+                f"recency_filtering.min_weight must be in (0, 1), got {rf.min_weight}."
+            )
+
+    iw = spec.execution.input_warping
+    if iw is not None:
+        if iw.time_feature_index < 0 or iw.time_feature_index >= spec.input_dim:
+            result.errors.append(
+                f"input_warping.time_feature_index={iw.time_feature_index} is out of range "
+                f"for input_dim={spec.input_dim}."
+            )
+        if spec.task_feature_index is not None and iw.time_feature_index == spec.task_feature_index:
+            result.errors.append(
+                f"input_warping.time_feature_index={iw.time_feature_index} must not be the task feature index."
+            )
+        if iw.concentration0 is not None and iw.concentration0 <= 0:
+            result.errors.append(
+                f"input_warping.concentration0 must be > 0, got {iw.concentration0}."
+            )
+        if iw.concentration1 is not None and iw.concentration1 <= 0:
+            result.errors.append(
+                f"input_warping.concentration1 must be > 0, got {iw.concentration1}."
             )
 
 
