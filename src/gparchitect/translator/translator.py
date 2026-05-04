@@ -41,6 +41,7 @@ from gparchitect.dsl.schema import (
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
+    InputWarpingSpec,
     KernelSpec,
     KernelType,
     MeanFunctionType,
@@ -49,9 +50,12 @@ from gparchitect.dsl.schema import (
     NoiseSpec,
     PriorDistribution,
     PriorSpec,
-    RecencyWeightingMode,
-    RecencyWeightingSpec,
+    RecencyFilteringMode,
+    RecencyFilteringSpec,
     SpectralMixtureInitialization,
+    TimeVaryingSpec,
+    TimeVaryingTarget,
+    WarpType,
 )
 
 logger = logging.getLogger(__name__)
@@ -155,9 +159,7 @@ _PRIOR_TARGET_ALIASES = {
     "observation noise": "noise",
     "noise variance": "noise",
 }
-_PRIOR_DISTRIBUTION_PATTERN = (
-    r"lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform"
-)
+_PRIOR_DISTRIBUTION_PATTERN = r"lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform"
 _PRIOR_TARGET_PATTERN = (
     r"lengthscale|length\s+scale|outputscale|output\s+scale|period(?:\s+length)?|"
     r"observation\s+noise|noise\s+variance|noise"
@@ -237,7 +239,7 @@ _CHANGEPOINT_STEEPNESS_PATTERN = re.compile(
 )
 
 # ---------------------------------------------------------------------------
-# Recency weighting patterns
+# Recency filtering patterns (Tier 1)
 # ---------------------------------------------------------------------------
 _SLIDING_WINDOW_PATTERN = re.compile(
     r"\b(?:sliding[\s\-_]?window|time[\s\-_]?window|recent\s+window|window[\s\-_]?size)\b",
@@ -245,7 +247,7 @@ _SLIDING_WINDOW_PATTERN = re.compile(
 )
 _EXPONENTIAL_DISCOUNT_PATTERN = re.compile(
     r"\b(?:exponential[\s\-_]?(?:discount|decay|forget(?:ting)?)|forgetting|"
-    r"down[\s\-_]?weight(?:ing)?|recency[\s\-_]?weight(?:ing)?|forget(?:ting)?\s+old)\b",
+    r"down[\s\-_]?weight(?:ing)?|recency[\s\-_]?(?:weight(?:ing)?|filter(?:ing)?)|forget(?:ting)?\s+old)\b",
     re.IGNORECASE,
 )
 _WINDOW_SIZE_PATTERN = re.compile(
@@ -258,6 +260,30 @@ _DISCOUNT_RATE_PATTERN = re.compile(
 )
 _TIME_FEATURE_PATTERN = re.compile(
     r"\b(?:time[\s\-_]?(?:feature|column|index|col)|time)\s*(?:=|index|col(?:umn)?)?\s*(\d+)\b",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Tier 2: time-varying hyperparameter patterns
+# ---------------------------------------------------------------------------
+_TIME_VARYING_OUTPUTSCALE_PATTERN = re.compile(
+    r"\b(?:time[\s\-_]?vary(?:ing)?\s+(?:output[\s\-_]?scale|amplitude|signal|variance)|"
+    r"(?:output[\s\-_]?scale|amplitude|signal|variance)\s+(?:change|changes|vary|varies|varies\s+over)\s+(?:over\s+)?time)\b",
+    re.IGNORECASE,
+)
+_TIME_VARYING_LENGTHSCALE_PATTERN = re.compile(
+    r"\b(?:time[\s\-_]?vary(?:ing)?\s+(?:length[\s\-_]?scale|smoothness)|"
+    r"(?:length[\s\-_]?scale|smoothness)\s+(?:change|changes|vary|varies)\s+(?:over\s+)?time|"
+    r"non[\s\-_]?stationary\s+smoothness)\b",
+    re.IGNORECASE,
+)
+
+# ---------------------------------------------------------------------------
+# Tier 2: input warping patterns
+# ---------------------------------------------------------------------------
+_INPUT_WARP_PATTERN = re.compile(
+    r"\b(?:warp\s+time|warped\s+time(?:\s+axis)?|non[\s\-_]?linear\s+time\s+warp|"
+    r"input[\s\-_]?warp(?:ing)?(?:\s+(?:on\s+)?time)?|kumaraswamy\s+warp)\b",
     re.IGNORECASE,
 )
 
@@ -343,12 +369,16 @@ def _extract_power(instruction: str) -> float | None:
     return float(match.group(1))
 
 
-def _detect_recency_weighting(
+def _detect_recency_filtering(
     instruction: str,
     input_dim: int,
     input_feature_names: list[str] | None,
-) -> RecencyWeightingSpec | None:
-    """Detect an optional recency-weighting specification from an instruction.
+) -> RecencyFilteringSpec | None:
+    """Detect an optional recency-filtering specification from an instruction.
+
+    Returns a RecencyFilteringSpec (dataset truncation before fitting) if the
+    instruction mentions sliding-window or exponential-discount filtering.
+    This is NOT true likelihood-weighted GP inference.
 
     Args:
         instruction: Free-text instruction string.
@@ -356,7 +386,7 @@ def _detect_recency_weighting(
         input_feature_names: Optional list of continuous feature column names.
 
     Returns:
-        A RecencyWeightingSpec if recency weighting was requested, otherwise None.
+        A RecencyFilteringSpec if recency filtering was requested, otherwise None.
     """
     has_sliding = _SLIDING_WINDOW_PATTERN.search(instruction) is not None
     has_discount = _EXPONENTIAL_DISCOUNT_PATTERN.search(instruction) is not None
@@ -371,8 +401,9 @@ def _detect_recency_weighting(
         time_feature_index = int(tf_match.group(1))
     elif input_feature_names:
         for idx, name in enumerate(input_feature_names):
-            if re.search(r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b",
-                         name, re.IGNORECASE):
+            if re.search(
+                r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b", name, re.IGNORECASE
+            ):
                 time_feature_index = idx
                 break
 
@@ -386,8 +417,8 @@ def _detect_recency_weighting(
             window_size = float(ws_match.group(1))
         else:
             window_size = 0.5  # default: half of the (scaled) feature range
-        return RecencyWeightingSpec(
-            mode=RecencyWeightingMode.SLIDING_WINDOW,
+        return RecencyFilteringSpec(
+            mode=RecencyFilteringMode.SLIDING_WINDOW,
             time_feature_index=time_feature_index,
             window_size=window_size,
         )
@@ -399,11 +430,90 @@ def _detect_recency_weighting(
         discount_rate = float(dr_match.group(1))
     else:
         discount_rate = 1.0  # default rate
-    return RecencyWeightingSpec(
-        mode=RecencyWeightingMode.EXPONENTIAL_DISCOUNT,
+    return RecencyFilteringSpec(
+        mode=RecencyFilteringMode.EXPONENTIAL_DISCOUNT,
         time_feature_index=time_feature_index,
         discount_rate=discount_rate,
     )
+
+
+def _detect_time_varying_spec(
+    instruction: str,
+    input_dim: int,
+    input_feature_names: list[str] | None,
+) -> tuple[TimeVaryingTarget, int] | None:
+    """Detect a Tier 2 time-varying hyperparameter request from an instruction.
+
+    Returns a (target, time_feature_index) pair if a time-varying request is found,
+    otherwise None.  Outputscale requests take priority over lengthscale requests
+    when both patterns are present.
+
+    Args:
+        instruction: Free-text instruction string.
+        input_dim: Total number of input features.
+        input_feature_names: Optional list of continuous feature column names.
+
+    Returns:
+        A (TimeVaryingTarget, time_feature_index) tuple or None.
+    """
+    has_outputscale = _TIME_VARYING_OUTPUTSCALE_PATTERN.search(instruction) is not None
+    has_lengthscale = _TIME_VARYING_LENGTHSCALE_PATTERN.search(instruction) is not None
+
+    if not has_outputscale and not has_lengthscale:
+        return None
+
+    # Determine the time feature index using the same heuristic as recency filtering.
+    time_feature_index = 0
+    tf_match = _TIME_FEATURE_PATTERN.search(instruction)
+    if tf_match is not None:
+        time_feature_index = int(tf_match.group(1))
+    elif input_feature_names:
+        for idx, name in enumerate(input_feature_names):
+            if re.search(
+                r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b", name, re.IGNORECASE
+            ):
+                time_feature_index = idx
+                break
+
+    time_feature_index = max(0, min(time_feature_index, input_dim - 1))
+
+    target = TimeVaryingTarget.OUTPUTSCALE if has_outputscale else TimeVaryingTarget.LENGTHSCALE
+    return target, time_feature_index
+
+
+def _detect_input_warping(
+    instruction: str,
+    input_dim: int,
+    input_feature_names: list[str] | None,
+) -> InputWarpingSpec | None:
+    """Detect a Tier 2 input warping request from an instruction.
+
+    Args:
+        instruction: Free-text instruction string.
+        input_dim: Total number of input features.
+        input_feature_names: Optional list of continuous feature column names.
+
+    Returns:
+        An InputWarpingSpec if warping was requested, otherwise None.
+    """
+    if _INPUT_WARP_PATTERN.search(instruction) is None:
+        return None
+
+    # Determine the time feature index.
+    time_feature_index = 0
+    tf_match = _TIME_FEATURE_PATTERN.search(instruction)
+    if tf_match is not None:
+        time_feature_index = int(tf_match.group(1))
+    elif input_feature_names:
+        for idx, name in enumerate(input_feature_names):
+            if re.search(
+                r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b", name, re.IGNORECASE
+            ):
+                time_feature_index = idx
+                break
+
+    time_feature_index = max(0, min(time_feature_index, input_dim - 1))
+    return InputWarpingSpec(warp_type=WarpType.KUMARASWAMY, time_feature_index=time_feature_index)
 
 
 def _build_changepoint_kernel_spec(
@@ -760,7 +870,17 @@ def translate_to_dsl(
     _apply_detected_priors(instruction, default_kernel_spec, noise)
     feature_groups = _extract_feature_groups(instruction, input_feature_names)
     mean, output_means = _detect_means(instruction, model_class, output_dim)
-    recency_weighting = _detect_recency_weighting(instruction, input_dim, input_feature_names)
+    recency_filtering = _detect_recency_filtering(instruction, input_dim, input_feature_names)
+    time_varying_result = _detect_time_varying_spec(instruction, input_dim, input_feature_names)
+    input_warping = _detect_input_warping(instruction, input_dim, input_feature_names)
+
+    # Apply time-varying modulation to the default kernel spec if detected.
+    if time_varying_result is not None:
+        tv_target, tv_time_index = time_varying_result
+        default_kernel_spec.time_varying = TimeVaryingSpec(
+            target=tv_target,
+            time_feature_index=tv_time_index,
+        )
 
     resolved_task_values = task_values
 
@@ -770,6 +890,13 @@ def translate_to_dsl(
             composition = CompositionType.HIERARCHICAL if len(feature_groups) > 1 else CompositionType.ADDITIVE
         for group in feature_groups:
             _apply_detected_priors(instruction, group.kernel, noise)
+            # Propagate time-varying to per-group kernels as well, if detected.
+            if time_varying_result is not None and group.kernel.time_varying is None:
+                tv_target, tv_time_index = time_varying_result
+                group.kernel.time_varying = TimeVaryingSpec(
+                    target=tv_target,
+                    time_feature_index=tv_time_index,
+                )
 
     elif model_class == ModelClass.MODEL_LIST_GP:
         composition = explicit_composition or CompositionType.ADDITIVE
@@ -807,7 +934,8 @@ def translate_to_dsl(
     execution = ExecutionSpec(
         input_scaling=base_execution.input_scaling,
         outcome_standardization=base_execution.outcome_standardization,
-        recency_weighting=recency_weighting,
+        recency_filtering=recency_filtering,
+        input_warping=input_warping,
     )
 
     spec = GPSpec(

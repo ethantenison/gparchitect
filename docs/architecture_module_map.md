@@ -104,11 +104,15 @@ Kernel construction follows these builder-side rules:
 **Key types**:
 - `GPSpec` — root DSL object
 - `FeatureGroupSpec` — a group of input features with a shared kernel
-- `KernelSpec` — a kernel or composition of kernels
+- `KernelSpec` — a kernel or composition of kernels, with optional `time_varying` spec
 - `MeanSpec` — a shared or per-output mean-function specification
 - `NoiseSpec` — noise model specification
 - `PriorSpec` — hyperparameter prior specification
-- `ExecutionSpec` — explicit preprocessing and outcome-transform semantics
+- `ExecutionSpec` — explicit preprocessing and outcome-transform semantics, including
+  `recency_filtering` (Tier 1) and `input_warping` (Tier 2)
+- `RecencyFilteringSpec` — Tier 1 dataset-truncation spec (formerly mislabeled "recency weighting")
+- `TimeVaryingSpec` — Tier 2 time-varying hyperparameter spec for `KernelSpec.time_varying`
+- `InputWarpingSpec` — Tier 2 Kumaraswamy input-warp spec for `ExecutionSpec.input_warping`
 
 For the current validated contract:
 
@@ -119,6 +123,15 @@ For the current validated contract:
   prior placements must be rejected during validation.
 - Execution semantics such as input scaling and outcome standardization live in
   `GPSpec.execution` so they are machine-readable contract surface.
+- `recency_filtering` is dataset truncation (Tier 1), not true likelihood weighting.
+  The canonical field name is `recency_filtering`; the old name `recency_weighting` is removed.
+- `time_varying` on a `KernelSpec` (Tier 2) wraps the base kernel with a linear modulation.
+  Only `parameterization="linear"` is supported.  Composed kernels (with children) may not
+  carry `time_varying`.
+- `input_warping` on `ExecutionSpec` (Tier 2) applies a Kumaraswamy CDF warp via BoTorch's
+  `Warp` input transform.  Input scaling should be active for the warp to operate in `[0, 1]`.
+- `heteroskedastic_noise=True` is currently rejected by the validator as a forward-compatibility
+  placeholder.
 
 **Boundary rule**: This module has NO dependencies on other gparchitect modules.
 It must remain import-free from the rest of the codebase.
@@ -190,6 +203,7 @@ Translation rules that matter for contract alignment:
 **Key functions**:
 - `build_model_from_dsl(spec, train_X, train_Y) → BoTorch model`
 - `prepare_data(dataframe, input_columns, output_columns, task_column) → DataBundle`
+- `apply_recency_filtering(train_X, train_Y, spec) → (train_X, train_Y)` — Tier 1 dataset truncation
 
 Builder responsibilities include:
 
@@ -199,6 +213,18 @@ Builder responsibilities include:
 - Applying the supported validated subset of DSL priors to kernels and learnable noise
 - Respecting the execution semantics in `GPSpec.execution`
 - Selecting the likelihood implementation from the DSL noise spec and model class
+- **Tier 2**: Wrapping base kernels in `TimeVaryingKernel` when `KernelSpec.time_varying` is set.
+  The wrapper adds learned bias and slope parameters for smooth outputscale or lengthscale
+  modulation as a function of the designated time feature.
+- **Tier 2**: Attaching a BoTorch `Warp` input transform when `ExecutionSpec.input_warping` is set.
+  The warp is applied to the designated time feature dimension only.
+
+**Key modules**:
+- `builder.py` — main model construction and composition
+- `recency.py` — Tier 1 recency filtering (dataset truncation before fitting)
+- `time_varying_kernel.py` — Tier 2 time-varying kernel wrapper modules
+- `changepoint_kernel.py` — Tier 1 changepoint kernel implementation
+- `data.py` — data preparation utilities
 
 **Boundary rule**: Builders import `dsl` and `torch`/`botorch`/`gpytorch`.
 They must NOT import from `translator`, `fitting`, `revision`, or `logging`.

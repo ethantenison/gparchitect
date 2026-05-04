@@ -161,9 +161,7 @@ class TestAgentFrontmatterSchema:
             )
 
         assert _get_string(frontmatter, "name").strip(), f"{agent_path.name} must define a non-empty name"
-        assert _get_string(frontmatter, "description").strip(), (
-            f"{agent_path.name} must define a non-empty description"
-        )
+        assert _get_string(frontmatter, "description").strip(), f"{agent_path.name} must define a non-empty description"
         assert _get_string(frontmatter, "description").startswith("Use "), (
             f"{agent_path.name} description should start with 'Use ' for discoverability"
         )
@@ -184,8 +182,7 @@ class TestAgentFrontmatterSchema:
     @pytest.mark.parametrize("agent_path", _iter_agent_files(), ids=lambda path: path.name)
     def test_all_delegated_agents_resolve_to_workspace_agent_names(self, agent_path: Path) -> None:
         available_agent_names = {
-            _get_string(_read_agent(candidate.name)[0], "name")
-            for candidate in _iter_agent_files()
+            _get_string(_read_agent(candidate.name)[0], "name") for candidate in _iter_agent_files()
         }
         frontmatter, _ = _read_agent(agent_path.name)
 

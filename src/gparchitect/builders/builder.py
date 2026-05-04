@@ -294,8 +294,25 @@ def _build_gpytorch_kernel_with_active_dims(
 
     should_wrap = wrap_in_scale and kernel_spec.kernel_type != KernelType.SPECTRAL_MIXTURE
     if should_wrap:
-        return gpytorch.kernels.ScaleKernel(base_kernel, outputscale_prior=outputscale_prior)
-    return base_kernel
+        scaled = gpytorch.kernels.ScaleKernel(base_kernel, outputscale_prior=outputscale_prior)
+    else:
+        scaled = base_kernel
+
+    # Apply Tier 2 time-varying hyperparameter wrapper if requested.
+    # The wrapper is applied after the base kernel (and optional ScaleKernel) is built,
+    # so that the time-varying modulation acts on the full scaled kernel output or
+    # on the kernel's time input, depending on the target.
+    if kernel_spec.time_varying is not None:
+        from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
+
+        tv_spec = kernel_spec.time_varying
+        scaled = build_time_varying_kernel(
+            base_kernel=scaled,
+            time_feature_index=tv_spec.time_feature_index,
+            target=tv_spec.target.value,
+        )
+
+    return scaled
 
 
 def _kernel_initialization_target(train_Y):  # noqa: ANN201, ANN001
@@ -343,8 +360,7 @@ def _build_covariance_module(
     import gpytorch
 
     group_kernels = [
-        _build_group_kernel(group, feature_index_map, train_X=train_X, train_Y=train_Y)
-        for group in spec.feature_groups
+        _build_group_kernel(group, feature_index_map, train_X=train_X, train_Y=train_Y) for group in spec.feature_groups
     ]
 
     if len(group_kernels) == 1:
@@ -374,9 +390,7 @@ def _build_covariance_module(
                     ],
                 )
                 interaction_terms.append(
-                    gpytorch.kernels.ScaleKernel(
-                        gpytorch.kernels.ProductKernel(*interaction_components)
-                    )
+                    gpytorch.kernels.ScaleKernel(gpytorch.kernels.ProductKernel(*interaction_components))
                 )
         combined_kernels = cast(list[Any], group_kernels + interaction_terms)
         return gpytorch.kernels.AdditiveKernel(*combined_kernels)
@@ -395,9 +409,7 @@ def _build_covariance_module(
                 for group in spec.feature_groups
             ],
         )
-        return gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.ProductKernel(*product_kernels)
-        )
+        return gpytorch.kernels.ScaleKernel(gpytorch.kernels.ProductKernel(*product_kernels))
     if spec.group_composition == CompositionType.NONE:
         raise ValueError("Multiple feature groups require explicit combination semantics; composition=none is invalid.")
     return gpytorch.kernels.AdditiveKernel(*cast(list[Any], group_kernels))
@@ -416,9 +428,7 @@ def _prepare_inputs(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.Tenso
     """
     import torch
 
-    continuous_indices = sorted(
-        {idx for group in spec.feature_groups for idx in group.feature_indices}
-    )
+    continuous_indices = sorted({idx for group in spec.feature_groups for idx in group.feature_indices})
     feature_index_map = {index: position for position, index in enumerate(continuous_indices)}
     continuous_X = train_X[:, continuous_indices]
 
@@ -508,8 +518,65 @@ def _build_multitask_mean_module(
     return _TaskIndexedMean(base_means=base_means, resolved_task_values=task_values, task_feature_index=-1)
 
 
+def _build_input_transform(
+    spec: GPSpec,
+    feature_index_map: dict[int, int],
+    full_X: "torch.Tensor",
+) -> "object | None":
+    """Build an optional BoTorch input transform from the ExecutionSpec.
+
+    Currently only supports the Tier 2 Kumaraswamy input warp.  Returns None when
+    no input transform is requested.
+
+    Args:
+        spec: The validated GPSpec.
+        feature_index_map: Mapping from original feature indices to contiguous indices
+            in the continuous-feature tensor (used to translate the DSL index).
+        full_X: The continuous feature tensor (used only for shape information).
+
+    Returns:
+        A botorch.models.transforms.input.InputTransform instance, or None.
+    """
+    warping_spec = spec.execution.input_warping
+    if warping_spec is None:
+        return None
+
+    from botorch.models.transforms.input import Warp
+
+    # Map the DSL-level time_feature_index to the contiguous input index.
+    # If the index is not in feature_index_map (e.g. it was removed from the
+    # continuous set), fall back to the raw index clamped to valid range.
+    mapped_index = feature_index_map.get(warping_spec.time_feature_index, warping_spec.time_feature_index)
+    n_cols = full_X.shape[-1]
+    mapped_index = max(0, min(mapped_index, n_cols - 1))
+
+    warp_transform = Warp(indices=[mapped_index], d=n_cols)
+
+    if warping_spec.concentration0 is not None or warping_spec.concentration1 is not None:
+        # Use the Warp's built-in initialize() method which respects constraints.
+        init_kwargs: dict[str, float] = {}
+        if warping_spec.concentration0 is not None:
+            init_kwargs["concentration0"] = warping_spec.concentration0
+        if warping_spec.concentration1 is not None:
+            init_kwargs["concentration1"] = warping_spec.concentration1
+        warp_transform.initialize(**init_kwargs)
+
+    logger.info(
+        "Input warping enabled: type=%s, time_feature_index=%d (mapped→%d)",
+        warping_spec.warp_type.value,
+        warping_spec.time_feature_index,
+        mapped_index,
+    )
+    return warp_transform
+
+
 def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.Tensor"):  # noqa: ANN201
     """Construct a BoTorch GP model from a validated GPSpec.
+
+    When spec.execution.input_warping is set, a Kumaraswamy input warp transform is
+    applied to the designated time-like feature dimension before model construction.
+    The warp is a BoTorch-native input transform (botorch.models.transforms.input.Warp)
+    that is optimized jointly with the kernel hyperparameters.
 
     Args:
         spec: A validated GPSpec DSL object.
@@ -530,6 +597,8 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
 
     logger.info("Building model: class=%s, input_shape=%s", spec.model_class.value, tuple(full_X.shape))
 
+    input_transform = _build_input_transform(spec, feature_index_map, full_X)
+
     if spec.model_class == ModelClass.SINGLE_TASK_GP:
         covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
         mean_module = _build_mean_module(spec, input_size=full_X.shape[-1])
@@ -542,6 +611,7 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
             likelihood=likelihood,
             mean_module=mean_module,
             outcome_transform=outcome_transform,
+            input_transform=input_transform,
         )
 
     elif spec.model_class == ModelClass.MULTI_TASK_GP:
@@ -578,6 +648,7 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
             covar_module=covar_module,
             likelihood=likelihood,
             rank=rank,
+            input_transform=input_transform,
         )
 
     elif spec.model_class == ModelClass.MODEL_LIST_GP:
@@ -595,6 +666,7 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
                 likelihood=likelihood,
                 mean_module=mean_module,
                 outcome_transform=outcome_transform,
+                input_transform=input_transform,
             )
             individual_models.append(single_model)
         model = botorch.models.ModelListGP(*individual_models)

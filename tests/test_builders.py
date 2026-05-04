@@ -140,6 +140,7 @@ class TestCovarianceBuilder:
         from gparchitect.builders.builder import _build_covariance_module, _prepare_inputs
 
         called = {"empspect": False}
+
         def _record_initialize(self, train_x, train_y):  # noqa: ANN001, ANN202
             called["empspect"] = True
             raise ImportError("optional empirical-spectrum dependencies unavailable in test")
@@ -353,8 +354,7 @@ class TestCovarianceBuilder:
         assert isinstance(covar_module, gpytorch.kernels.ScaleKernel)
         assert isinstance(covar_module.base_kernel, gpytorch.kernels.ProductKernel)
         assert all(
-            not isinstance(component, gpytorch.kernels.ScaleKernel)
-            for component in covar_module.base_kernel.kernels
+            not isinstance(component, gpytorch.kernels.ScaleKernel) for component in covar_module.base_kernel.kernels
         )
 
     def test_nested_product_kernel_wraps_only_outer_product(self) -> None:
@@ -378,10 +378,7 @@ class TestCovarianceBuilder:
 
         assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
         assert isinstance(kernel.base_kernel, gpytorch.kernels.ProductKernel)
-        assert all(
-            not isinstance(component, gpytorch.kernels.ScaleKernel)
-            for component in kernel.base_kernel.kernels
-        )
+        assert all(not isinstance(component, gpytorch.kernels.ScaleKernel) for component in kernel.base_kernel.kernels)
 
     def test_nested_additive_kernel_scales_each_term_without_outer_scale(self) -> None:
         try:
@@ -436,8 +433,7 @@ class TestCovarianceBuilder:
         assert isinstance(kernel.base_kernel, gpytorch.kernels.ProductKernel)
         assert isinstance(kernel.base_kernel.kernels[0], gpytorch.kernels.AdditiveKernel)
         assert all(
-            isinstance(component, gpytorch.kernels.ScaleKernel)
-            for component in kernel.base_kernel.kernels[0].kernels
+            isinstance(component, gpytorch.kernels.ScaleKernel) for component in kernel.base_kernel.kernels[0].kernels
         )
         assert not isinstance(kernel.base_kernel.kernels[1], gpytorch.kernels.ScaleKernel)
 
@@ -528,7 +524,9 @@ class TestBuildModelMocked:
             kernel_type=KernelType.PERIODIC,
             ard=True,
             lengthscale_prior=PriorSpec(distribution=PriorDistribution.NORMAL, params={"loc": 0.0, "scale": 1.0}),
-            outputscale_prior=PriorSpec(distribution=PriorDistribution.GAMMA, params={"concentration": 2.0, "rate": 0.5}),
+            outputscale_prior=PriorSpec(
+                distribution=PriorDistribution.GAMMA, params={"concentration": 2.0, "rate": 0.5}
+            ),
             period_prior=PriorSpec(distribution=PriorDistribution.LOG_NORMAL, params={"loc": 0.0, "scale": 1.0}),
         )
         spec.noise = NoiseSpec(
@@ -618,7 +616,10 @@ class TestBuildModelMocked:
             task_feature_index=2,
             task_values=[0, 1],
             multitask_rank=1,
-            output_means={0: MeanSpec(mean_type=MeanFunctionType.ZERO), 1: MeanSpec(mean_type=MeanFunctionType.CONSTANT)},
+            output_means={
+                0: MeanSpec(mean_type=MeanFunctionType.ZERO),
+                1: MeanSpec(mean_type=MeanFunctionType.CONSTANT),
+            },
         )
 
         train_X = torch.tensor(
@@ -734,9 +735,7 @@ class TestDataPrepare:
 
         from gparchitect.builders.data import prepare_data
 
-        df = pd.DataFrame(
-            {"x1": [1.0, 2.0], "x2": [3.0, 4.0], "task": [0, 1], "y": [0.1, 0.2]}
-        )
+        df = pd.DataFrame({"x1": [1.0, 2.0], "x2": [3.0, 4.0], "task": [0, 1], "y": [0.1, 0.2]})
         bundle = prepare_data(df, input_columns=["x1", "x2"], output_columns=["y"], task_column="task")
 
         assert bundle.task_feature_index == 2

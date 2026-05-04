@@ -32,7 +32,9 @@ class TestPlanningModels:
             ],
             structural_behaviors=["Capacity fade is smooth over most of the operating range."],
             assumptions_requiring_validation=["Confirm whether the smooth trend breaks in fast-charging regimes."],
-            minimal_open_questions_for_architecture_focus=["Is there a task indicator for cell chemistry or operating mode?"],
+            minimal_open_questions_for_architecture_focus=[
+                "Is there a task indicator for cell chemistry or operating mode?"
+            ],
         )
 
         payload = json.loads(handoff.model_dump_json())
@@ -104,7 +106,9 @@ class TestPlanningRuntime:
         assert result.architecture is not None
 
     def test_run_architecture_focus_rejects_malformed_prior_handoff(self) -> None:
-        malformed_handoff = "BEGIN GPARCHITECT PRIOR KNOWLEDGE HANDOFF\nSystem Summary:\n- Battery degradation forecasting"
+        malformed_handoff = (
+            "BEGIN GPARCHITECT PRIOR KNOWLEDGE HANDOFF\nSystem Summary:\n- Battery degradation forecasting"
+        )
 
         with pytest.raises(ValueError, match="Malformed GPArchitect prior-knowledge handoff block"):
             run_architecture_focus(malformed_handoff)

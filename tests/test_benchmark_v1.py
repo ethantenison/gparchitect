@@ -198,8 +198,15 @@ class TestRegistry:
         from benchmark_v1.registry import list_datasets
 
         names = list_datasets()
-        for expected in ["additive", "periodic_decay", "interaction", "ard_stress",
-                         "branin", "hartmann6", "rosenbrock"]:
+        for expected in [
+            "additive",
+            "periodic_decay",
+            "interaction",
+            "ard_stress",
+            "branin",
+            "hartmann6",
+            "rosenbrock",
+        ]:
             assert expected in names
 
     def test_tier_values(self) -> None:
@@ -259,8 +266,7 @@ class TestPromptVariants:
     def test_all_datasets_have_prompts(self) -> None:
         from benchmark_v1.prompts.variants import ALL_PROMPT_VARIANTS
 
-        expected = ["additive", "periodic_decay", "interaction", "ard_stress",
-                    "branin", "hartmann6", "rosenbrock"]
+        expected = ["additive", "periodic_decay", "interaction", "ard_stress", "branin", "hartmann6", "rosenbrock"]
         for name in expected:
             assert name in ALL_PROMPT_VARIANTS
 
@@ -459,11 +465,20 @@ class TestAggregateMetrics:
 
         records = [
             RunRecord(
-                dataset_name="additive", tier=2, seed=s, noise_std=0.05,
-                model_type="baseline", model_id="matern52_ard",
-                fit_success=True, retry_count=0,
-                rmse=0.1 + 0.01 * s, mae=0.08, nll=-1.0, coverage_95=0.93,
-                interval_width_95=0.5, wall_time_s=1.0,
+                dataset_name="additive",
+                tier=2,
+                seed=s,
+                noise_std=0.05,
+                model_type="baseline",
+                model_id="matern52_ard",
+                fit_success=True,
+                retry_count=0,
+                rmse=0.1 + 0.01 * s,
+                mae=0.08,
+                nll=-1.0,
+                coverage_95=0.93,
+                interval_width_95=0.5,
+                wall_time_s=1.0,
             )
             for s in range(3)
         ]
@@ -490,15 +505,35 @@ class TestAggregateMetrics:
 
         records = [
             RunRecord(
-                dataset_name="test_ds", tier=2, seed=0, noise_std=0.0,
-                model_type="baseline", model_id="x", fit_success=False, retry_count=0,
-                rmse=None, mae=None, nll=None, coverage_95=None, interval_width_95=None,
+                dataset_name="test_ds",
+                tier=2,
+                seed=0,
+                noise_std=0.0,
+                model_type="baseline",
+                model_id="x",
+                fit_success=False,
+                retry_count=0,
+                rmse=None,
+                mae=None,
+                nll=None,
+                coverage_95=None,
+                interval_width_95=None,
                 wall_time_s=0.1,
             ),
             RunRecord(
-                dataset_name="test_ds", tier=2, seed=1, noise_std=0.0,
-                model_type="baseline", model_id="x", fit_success=True, retry_count=0,
-                rmse=0.2, mae=0.15, nll=-0.5, coverage_95=0.90, interval_width_95=0.4,
+                dataset_name="test_ds",
+                tier=2,
+                seed=1,
+                noise_std=0.0,
+                model_type="baseline",
+                model_id="x",
+                fit_success=True,
+                retry_count=0,
+                rmse=0.2,
+                mae=0.15,
+                nll=-0.5,
+                coverage_95=0.90,
+                interval_width_95=0.4,
                 wall_time_s=0.2,
             ),
         ]
@@ -520,10 +555,19 @@ class TestRunRecord:
         from benchmark_v1.run_benchmark import RunRecord
 
         record = RunRecord(
-            dataset_name="additive", tier=2, seed=0, noise_std=0.05,
-            model_type="gparchitect", model_id="aligned",
-            fit_success=True, retry_count=1,
-            rmse=0.12, mae=0.09, nll=-1.5, coverage_95=0.94, interval_width_95=0.6,
+            dataset_name="additive",
+            tier=2,
+            seed=0,
+            noise_std=0.05,
+            model_type="gparchitect",
+            model_id="aligned",
+            fit_success=True,
+            retry_count=1,
+            rmse=0.12,
+            mae=0.09,
+            nll=-1.5,
+            coverage_95=0.94,
+            interval_width_95=0.6,
             wall_time_s=3.5,
         )
         d = record.to_dict()
@@ -535,11 +579,21 @@ class TestRunRecord:
         from benchmark_v1.run_benchmark import RunRecord
 
         record = RunRecord(
-            dataset_name="branin", tier=1, seed=2, noise_std=0.15,
-            model_type="baseline", model_id="default_singletask",
-            fit_success=False, retry_count=0,
-            rmse=None, mae=None, nll=None, coverage_95=None, interval_width_95=None,
-            wall_time_s=0.5, error_message="Cholesky failed",
+            dataset_name="branin",
+            tier=1,
+            seed=2,
+            noise_std=0.15,
+            model_type="baseline",
+            model_id="default_singletask",
+            fit_success=False,
+            retry_count=0,
+            rmse=None,
+            mae=None,
+            nll=None,
+            coverage_95=None,
+            interval_width_95=None,
+            wall_time_s=0.5,
+            error_message="Cholesky failed",
         )
         assert record.rmse is None
         assert record.fit_success is False

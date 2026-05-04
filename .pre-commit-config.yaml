@@ -1,0 +1,25 @@
+# Pre-commit hooks for GPArchitect.
+# Runs ruff format (auto-format) and ruff check (lint + auto-fix) on every commit.
+# Install once with: pre-commit install
+# Run manually against all files: pre-commit run --all-files
+#
+# Hook execution order matters:
+#   1. ruff-format  — formats code (whitespace, line breaks, quotes, etc.)
+#   2. ruff         — lint check with --fix for auto-fixable issues (import order, etc.)
+# Formatting always runs first so the linter sees already-formatted code.
+
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    # Pin to the same ruff version used in [tool.poetry.group.dev.dependencies]
+    rev: v0.15.4
+    hooks:
+      # 1. Auto-format with ruff format
+      - id: ruff-format
+        name: ruff format
+        description: Run ruff formatter (equivalent to black-style formatting)
+
+      # 2. Lint and auto-fix with ruff check
+      - id: ruff
+        name: ruff check
+        description: Run ruff linter with --fix for auto-fixable violations
+        args: [--fix]

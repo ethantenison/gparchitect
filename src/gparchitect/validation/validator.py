@@ -40,7 +40,7 @@ from gparchitect.dsl.schema import (
     ModelClass,
     PriorDistribution,
     PriorSpec,
-    RecencyWeightingMode,
+    RecencyFilteringMode,
     SpectralMixtureInitialization,
 )
 
@@ -164,8 +164,7 @@ def _check_feature_groups(spec: GPSpec, result: ValidationResult) -> None:
         for idx in group.feature_indices:
             if idx < 0 or idx >= spec.input_dim:
                 result.errors.append(
-                    f"Feature group '{group.name}': index {idx} is out of range "
-                    f"for input_dim={spec.input_dim}."
+                    f"Feature group '{group.name}': index {idx} is out of range for input_dim={spec.input_dim}."
                 )
             if spec.task_feature_index is not None and idx == spec.task_feature_index:
                 result.errors.append(
@@ -194,9 +193,7 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
         pass
 
     if kernel.kernel_type == KernelType.RQ and kernel.rq_alpha is not None and kernel.rq_alpha <= 0:
-        result.errors.append(
-            f"Feature group '{group_name}': RQ alpha must be > 0, got {kernel.rq_alpha}."
-        )
+        result.errors.append(f"Feature group '{group_name}': RQ alpha must be > 0, got {kernel.rq_alpha}.")
 
     if kernel.kernel_type == KernelType.PERIODIC and kernel.period_length is not None and kernel.period_length <= 0:
         result.errors.append(
@@ -216,16 +213,13 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
     if kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
         if kernel.num_mixtures is not None and kernel.num_mixtures < 1:
             result.errors.append(
-                f"Feature group '{group_name}': SpectralMixture num_mixtures must be >= 1, "
-                f"got {kernel.num_mixtures}."
+                f"Feature group '{group_name}': SpectralMixture num_mixtures must be >= 1, got {kernel.num_mixtures}."
             )
         if kernel.spectral_init not in {
             SpectralMixtureInitialization.FROM_DATA,
             SpectralMixtureInitialization.FROM_EMPIRICAL_SPECTRUM,
         }:
-            result.errors.append(
-                f"Feature group '{group_name}': unsupported spectral_init '{kernel.spectral_init}'."
-            )
+            result.errors.append(f"Feature group '{group_name}': unsupported spectral_init '{kernel.spectral_init}'.")
         if not kernel.ard:
             result.warnings.append(
                 f"Feature group '{group_name}': SpectralMixtureKernel requires ard_num_dims to match the "
@@ -268,8 +262,25 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
             )
         if kernel.changepoint_steepness is not None and kernel.changepoint_steepness <= 0:
             result.errors.append(
-                f"Feature group '{group_name}': Changepoint steepness must be > 0, "
-                f"got {kernel.changepoint_steepness}."
+                f"Feature group '{group_name}': Changepoint steepness must be > 0, got {kernel.changepoint_steepness}."
+            )
+
+    if kernel.time_varying is not None:
+        tv = kernel.time_varying
+        if tv.parameterization != "linear":
+            result.errors.append(
+                f"Feature group '{group_name}': time_varying.parameterization must be 'linear', "
+                f"got '{tv.parameterization}'."
+            )
+        if tv.time_feature_index < 0:
+            result.errors.append(
+                f"Feature group '{group_name}': time_varying.time_feature_index must be >= 0, "
+                f"got {tv.time_feature_index}."
+            )
+        if kernel.children:
+            result.errors.append(
+                f"Feature group '{group_name}': time_varying is not supported on composed kernels "
+                "(kernels with children).  Set time_varying on a leaf kernel."
             )
 
     for child in kernel.children:
@@ -303,8 +314,7 @@ def _check_model_class_consistency(spec: GPSpec, result: ValidationResult) -> No
     elif spec.model_class == ModelClass.SINGLE_TASK_GP:
         if spec.task_feature_index is not None:
             result.warnings.append(
-                "task_feature_index is set but model_class is SingleTaskGP; "
-                "the task column will be ignored."
+                "task_feature_index is set but model_class is SingleTaskGP; the task column will be ignored."
             )
 
     if spec.model_class != ModelClass.MULTI_TASK_GP and spec.task_values is not None:
@@ -355,40 +365,45 @@ def _check_execution(spec: GPSpec, result: ValidationResult) -> None:
     if spec.model_class == ModelClass.MULTI_TASK_GP and spec.execution.outcome_standardization:
         result.errors.append("MultiTaskGP does not support outcome_standardization in the current contract.")
 
-    rw = spec.execution.recency_weighting
-    if rw is not None:
-        if rw.time_feature_index < 0 or rw.time_feature_index >= spec.input_dim:
+    rf = spec.execution.recency_filtering
+    if rf is not None:
+        if rf.time_feature_index < 0 or rf.time_feature_index >= spec.input_dim:
             result.errors.append(
-                f"recency_weighting.time_feature_index={rw.time_feature_index} is out of range "
+                f"recency_filtering.time_feature_index={rf.time_feature_index} is out of range "
                 f"for input_dim={spec.input_dim}."
             )
-        if spec.task_feature_index is not None and rw.time_feature_index == spec.task_feature_index:
+        if spec.task_feature_index is not None and rf.time_feature_index == spec.task_feature_index:
             result.errors.append(
-                f"recency_weighting.time_feature_index={rw.time_feature_index} must not be the "
-                "task feature index."
+                f"recency_filtering.time_feature_index={rf.time_feature_index} must not be the task feature index."
             )
-        if rw.mode == RecencyWeightingMode.SLIDING_WINDOW:
-            if rw.window_size is None:
-                result.errors.append(
-                    "recency_weighting.window_size must be set when mode=sliding_window."
-                )
-            elif rw.window_size <= 0:
-                result.errors.append(
-                    f"recency_weighting.window_size must be > 0, got {rw.window_size}."
-                )
-        if rw.mode == RecencyWeightingMode.EXPONENTIAL_DISCOUNT:
-            if rw.discount_rate is None:
-                result.errors.append(
-                    "recency_weighting.discount_rate must be set when mode=exponential_discount."
-                )
-            elif rw.discount_rate <= 0:
-                result.errors.append(
-                    f"recency_weighting.discount_rate must be > 0, got {rw.discount_rate}."
-                )
-        if rw.min_weight is not None and not (0 < rw.min_weight < 1):
+        if rf.mode == RecencyFilteringMode.SLIDING_WINDOW:
+            if rf.window_size is None:
+                result.errors.append("recency_filtering.window_size must be set when mode=sliding_window.")
+            elif rf.window_size <= 0:
+                result.errors.append(f"recency_filtering.window_size must be > 0, got {rf.window_size}.")
+        if rf.mode == RecencyFilteringMode.EXPONENTIAL_DISCOUNT:
+            if rf.discount_rate is None:
+                result.errors.append("recency_filtering.discount_rate must be set when mode=exponential_discount.")
+            elif rf.discount_rate <= 0:
+                result.errors.append(f"recency_filtering.discount_rate must be > 0, got {rf.discount_rate}.")
+        if rf.min_weight is not None and not (0 < rf.min_weight < 1):
+            result.errors.append(f"recency_filtering.min_weight must be in (0, 1), got {rf.min_weight}.")
+
+    iw = spec.execution.input_warping
+    if iw is not None:
+        if iw.time_feature_index < 0 or iw.time_feature_index >= spec.input_dim:
             result.errors.append(
-                f"recency_weighting.min_weight must be in (0, 1), got {rw.min_weight}."
+                f"input_warping.time_feature_index={iw.time_feature_index} is out of range "
+                f"for input_dim={spec.input_dim}."
             )
+        if spec.task_feature_index is not None and iw.time_feature_index == spec.task_feature_index:
+            result.errors.append(
+                f"input_warping.time_feature_index={iw.time_feature_index} must not be the task feature index."
+            )
+        if iw.concentration0 is not None and iw.concentration0 <= 0:
+            result.errors.append(f"input_warping.concentration0 must be > 0, got {iw.concentration0}.")
+        if iw.concentration1 is not None and iw.concentration1 <= 0:
+            result.errors.append(f"input_warping.concentration1 must be > 0, got {iw.concentration1}.")
 
 
 def _check_priors(spec: GPSpec, result: ValidationResult) -> None:
@@ -421,9 +436,7 @@ def _check_kernel_priors(group_name: str, kernel, result: ValidationResult) -> N
     if kernel.lengthscale_prior is not None:
         _check_prior_spec(f"Feature group '{group_name}': lengthscale_prior", kernel.lengthscale_prior, result)
         if kernel.children:
-            result.errors.append(
-                f"Feature group '{group_name}': lengthscale_prior is only supported on leaf kernels."
-            )
+            result.errors.append(f"Feature group '{group_name}': lengthscale_prior is only supported on leaf kernels.")
         elif kernel.kernel_type not in _LENGTHSCALE_PRIOR_KERNELS:
             result.errors.append(
                 f"Feature group '{group_name}': lengthscale_prior is not supported for {kernel.kernel_type.value}."
@@ -432,9 +445,7 @@ def _check_kernel_priors(group_name: str, kernel, result: ValidationResult) -> N
     if kernel.outputscale_prior is not None:
         _check_prior_spec(f"Feature group '{group_name}': outputscale_prior", kernel.outputscale_prior, result)
         if kernel.children:
-            result.errors.append(
-                f"Feature group '{group_name}': outputscale_prior is only supported on leaf kernels."
-            )
+            result.errors.append(f"Feature group '{group_name}': outputscale_prior is only supported on leaf kernels.")
         elif kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
             result.errors.append(
                 f"Feature group '{group_name}': outputscale_prior is not supported for SpectralMixture."
@@ -443,13 +454,9 @@ def _check_kernel_priors(group_name: str, kernel, result: ValidationResult) -> N
     if kernel.period_prior is not None:
         _check_prior_spec(f"Feature group '{group_name}': period_prior", kernel.period_prior, result)
         if kernel.children:
-            result.errors.append(
-                f"Feature group '{group_name}': period_prior is only supported on leaf kernels."
-            )
+            result.errors.append(f"Feature group '{group_name}': period_prior is only supported on leaf kernels.")
         elif kernel.kernel_type != KernelType.PERIODIC:
-            result.errors.append(
-                f"Feature group '{group_name}': period_prior is only supported for Periodic kernels."
-            )
+            result.errors.append(f"Feature group '{group_name}': period_prior is only supported for Periodic kernels.")
 
     for child in kernel.children:
         _check_kernel_priors(group_name, child, result)

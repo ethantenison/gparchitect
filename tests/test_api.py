@@ -89,9 +89,7 @@ class TestRunGPArchitectMocked:
 
         df = pd.DataFrame({"x1": [1.0, 2.0, 3.0], "x2": [4.0, 5.0, 6.0], "y": [0.1, 0.2, 0.3]})
         mock_build.return_value = MagicMock()
-        mock_fit.return_value = FitResult(
-            success=False, model=None, mll_value=None, error_message="Cholesky failed"
-        )
+        mock_fit.return_value = FitResult(success=False, model=None, mll_value=None, error_message="Cholesky failed")
 
         model, log = run_gparchitect(
             dataframe=df,

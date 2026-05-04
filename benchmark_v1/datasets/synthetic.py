@@ -116,11 +116,7 @@ def make_additive_dataset(
     x_irrelevant_1 = rng.uniform(0.0, 1.0, n_total)
     x_irrelevant_2 = rng.uniform(0.0, 1.0, n_total)
 
-    signal = (
-        0.5 * np.sin(2.0 * math.pi * x_smooth)
-        + 0.3 * x_trend
-        + 0.2 * x_scale
-    )
+    signal = 0.5 * np.sin(2.0 * math.pi * x_smooth) + 0.3 * x_trend + 0.2 * x_scale
     noise = rng.normal(0.0, noise_std, n_total)
     y = signal + noise
 
@@ -157,8 +153,7 @@ def make_additive_dataset(
 # ---------------------------------------------------------------------------
 
 _PERIODIC_DECAY_EQ = (
-    "y = 0.6 * sin(2*pi * seasonality_index / 0.25) * exp(-0.5 * system_age)"
-    " + 0.4 * exp(-1.5 * system_age) + eps"
+    "y = 0.6 * sin(2*pi * seasonality_index / 0.25) * exp(-0.5 * system_age) + 0.4 * exp(-1.5 * system_age) + eps"
 )
 
 

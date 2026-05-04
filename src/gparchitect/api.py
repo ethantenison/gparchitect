@@ -31,7 +31,7 @@ import pandas as pd
 
 from gparchitect.builders.builder import build_model_from_dsl
 from gparchitect.builders.data import DataBundle, prepare_data
-from gparchitect.builders.recency import apply_recency_weighting
+from gparchitect.builders.recency import apply_recency_filtering
 from gparchitect.dsl.schema import GPSpec
 from gparchitect.fitting.fitter import FitResult, fit_and_validate
 from gparchitect.logging.experiment_log import (
@@ -139,9 +139,9 @@ def run_gparchitect(
         try:
             fit_train_X = data_bundle.train_X
             fit_train_Y = data_bundle.train_Y
-            if spec.execution.recency_weighting is not None:
-                fit_train_X, fit_train_Y = apply_recency_weighting(
-                    fit_train_X, fit_train_Y, spec.execution.recency_weighting
+            if spec.execution.recency_filtering is not None:
+                fit_train_X, fit_train_Y = apply_recency_filtering(
+                    fit_train_X, fit_train_Y, spec.execution.recency_filtering
                 )
             model = build_model_from_dsl(spec, fit_train_X, fit_train_Y)
             fit_result: FitResult = fit_and_validate(model, fit_train_X, fit_train_Y)

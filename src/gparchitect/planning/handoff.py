@@ -99,7 +99,9 @@ def parse_prior_knowledge_handoff_text(text: str) -> PriorKnowledgeHandoff:
             representability.get("Likely future DSL or validation extension", "none")
         ),
         representability_unresolved=_split_value(representability.get("Unresolved or not actionable", "none")),
-        candidate_grouping_implications=_split_value(architecture_signals.get("Candidate grouping implications", "none")),
+        candidate_grouping_implications=_split_value(
+            architecture_signals.get("Candidate grouping implications", "none")
+        ),
         candidate_kernel_implications=_split_value(architecture_signals.get("Candidate kernel implications", "none")),
         candidate_noise_implications=_split_value(architecture_signals.get("Candidate noise implications", "none")),
         candidate_priors_implications=_split_value(architecture_signals.get("Candidate priors implications", "none")),
@@ -109,7 +111,9 @@ def parse_prior_knowledge_handoff_text(text: str) -> PriorKnowledgeHandoff:
         candidate_evaluation_implications=_split_value(
             architecture_signals.get("Candidate evaluation implications", "none")
         ),
-        candidate_recovery_implications=_split_value(architecture_signals.get("Candidate recovery implications", "none")),
+        candidate_recovery_implications=_split_value(
+            architecture_signals.get("Candidate recovery implications", "none")
+        ),
         assumptions_requiring_validation=_strip_bullets(section_map.get("Assumptions Requiring Validation", [])),
         minimal_open_questions_for_architecture_focus=_strip_bullets(
             section_map.get("Minimal Open Questions For Architecture Focus", [])

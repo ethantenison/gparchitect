@@ -77,8 +77,7 @@ def load_results(results_dir: Path) -> pd.DataFrame:
         return pd.read_csv(csv_path)
 
     raise FileNotFoundError(
-        f"No result files found in {results_dir}. "
-        "Run 'python -m benchmark_v1.run_benchmark' first."
+        f"No result files found in {results_dir}. Run 'python -m benchmark_v1.run_benchmark' first."
     )
 
 
@@ -149,10 +148,7 @@ def _build_rmse_table(agg: pd.DataFrame) -> str:
         std_str = _fmt(row["rmse_std"])
         cell = f"{mean_str} ± {std_str}"
         success = f"{row['n_success']}/{row['n_runs']}"
-        lines.append(
-            f"| {row['dataset_name']} | {row['noise_std']:.3f} | {row['model_id']} "
-            f"| {cell} | {success} |"
-        )
+        lines.append(f"| {row['dataset_name']} | {row['noise_std']:.3f} | {row['model_id']} | {cell} | {success} |")
     return "\n".join(lines)
 
 
@@ -172,10 +168,7 @@ def _build_nll_table(agg: pd.DataFrame) -> str:
     for _, row in agg.sort_values(["dataset_name", "noise_std", "model_id"]).iterrows():
         nll_str = f"{_fmt(row['nll_mean'])} ± {_fmt(row['nll_std'])}"
         cov_str = _fmt(row["coverage_95_mean"], decimals=3)
-        lines.append(
-            f"| {row['dataset_name']} | {row['noise_std']:.3f} | {row['model_id']} "
-            f"| {nll_str} | {cov_str} |"
-        )
+        lines.append(f"| {row['dataset_name']} | {row['noise_std']:.3f} | {row['model_id']} | {nll_str} | {cov_str} |")
     return "\n".join(lines)
 
 
@@ -253,7 +246,7 @@ def generate_report(df: pd.DataFrame, agg: pd.DataFrame, output_dir: Path) -> st
         "## Overview",
         "",
         f"- **Total runs**: {n_total}",
-        f"- **Successful fits**: {n_success} ({100*n_success/max(n_total,1):.1f}%)",
+        f"- **Successful fits**: {n_success} ({100 * n_success / max(n_total, 1):.1f}%)",
         f"- **Datasets**: {n_datasets}",
         f"- **Seeds**: {seeds}",
         f"- **Noise levels**: {noise_levels}",
@@ -346,13 +339,12 @@ def _generate_key_findings(df: pd.DataFrame, agg: pd.DataFrame) -> str:
             .reset_index()
             .rename(columns={"rmse_mean": "best_baseline_rmse"})
         )
-        aligned_per_group = (
-            aligned[["dataset_name", "noise_std", "rmse_mean"]]
-            .rename(columns={"rmse_mean": "aligned_rmse"})
+        aligned_per_group = aligned[["dataset_name", "noise_std", "rmse_mean"]].rename(
+            columns={"rmse_mean": "aligned_rmse"}
         )
-        merged = aligned_per_group.merge(
-            best_baseline_per_group, on=["dataset_name", "noise_std"], how="inner"
-        ).dropna(subset=["aligned_rmse", "best_baseline_rmse"])
+        merged = aligned_per_group.merge(best_baseline_per_group, on=["dataset_name", "noise_std"], how="inner").dropna(
+            subset=["aligned_rmse", "best_baseline_rmse"]
+        )
 
         if not merged.empty:
             aligned_mean = float(merged["aligned_rmse"].mean())
@@ -362,18 +354,20 @@ def _generate_key_findings(df: pd.DataFrame, agg: pd.DataFrame) -> str:
                 f"- **Aligned vs default baseline**: "
                 f"mean RMSE `aligned`={aligned_mean:.4f} vs "
                 f"best baseline={best_baseline_mean:.4f} (averaged over matched dataset/noise groups). "
-                + ("Aligned prompts beat the best baseline." if aligned_mean < best_baseline_mean
-                   else "Best baseline is competitive with aligned prompts.")
+                + (
+                    "Aligned prompts beat the best baseline."
+                    if aligned_mean < best_baseline_mean
+                    else "Best baseline is competitive with aligned prompts."
+                )
             )
 
         if not vague.empty:
-            vague_per_group = (
-                vague[["dataset_name", "noise_std", "rmse_mean"]]
-                .rename(columns={"rmse_mean": "vague_rmse"})
+            vague_per_group = vague[["dataset_name", "noise_std", "rmse_mean"]].rename(
+                columns={"rmse_mean": "vague_rmse"}
             )
-            merged_v = aligned_per_group.merge(
-                vague_per_group, on=["dataset_name", "noise_std"], how="inner"
-            ).dropna(subset=["aligned_rmse", "vague_rmse"])
+            merged_v = aligned_per_group.merge(vague_per_group, on=["dataset_name", "noise_std"], how="inner").dropna(
+                subset=["aligned_rmse", "vague_rmse"]
+            )
             if not merged_v.empty:
                 delta = float(merged_v["vague_rmse"].mean()) - float(merged_v["aligned_rmse"].mean())
                 lines.append(
@@ -382,9 +376,8 @@ def _generate_key_findings(df: pd.DataFrame, agg: pd.DataFrame) -> str:
                 )
 
         if not misleading.empty:
-            misleading_per_group = (
-                misleading[["dataset_name", "noise_std", "rmse_mean"]]
-                .rename(columns={"rmse_mean": "misleading_rmse"})
+            misleading_per_group = misleading[["dataset_name", "noise_std", "rmse_mean"]].rename(
+                columns={"rmse_mean": "misleading_rmse"}
             )
             merged_m = aligned_per_group.merge(
                 misleading_per_group, on=["dataset_name", "noise_std"], how="inner"
@@ -412,9 +405,7 @@ def _generate_key_findings(df: pd.DataFrame, agg: pd.DataFrame) -> str:
     gpa_df = df[df["model_type"] == "gparchitect"]
     if not gpa_df.empty:
         mean_retries = gpa_df["retry_count"].mean()
-        lines.append(
-            f"- **Retries**: GPArchitect used on average {mean_retries:.2f} retries per run."
-        )
+        lines.append(f"- **Retries**: GPArchitect used on average {mean_retries:.2f} retries per run.")
 
     return "\n".join(lines)
 
