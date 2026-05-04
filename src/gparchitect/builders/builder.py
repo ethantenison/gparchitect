@@ -270,7 +270,19 @@ def _build_gpytorch_kernel_with_active_dims(
                 )
                 for child in kernel_spec.children
             ]
-            return gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
+            composed = gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
+            if kernel_spec.time_varying is not None:
+                from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
+
+                tv_spec = kernel_spec.time_varying
+                composed = build_time_varying_kernel(
+                    base_kernel=composed,
+                    time_feature_index=tv_spec.time_feature_index,
+                    target=tv_spec.target.value,
+                    outputscale_bias_limit=tv_spec.outputscale_bias_limit,
+                    outputscale_slope_limit=tv_spec.outputscale_slope_limit,
+                )
+            return composed
 
         child_kernels = [
             _build_gpytorch_kernel_with_active_dims(
@@ -286,11 +298,27 @@ def _build_gpytorch_kernel_with_active_dims(
             composed = gpytorch.kernels.ProductKernel(*cast(list[Any], child_kernels))
         else:
             composed = gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
-        if not wrap_in_scale:
+
+        if wrap_in_scale:
+            scaled: Any = gpytorch.kernels.ScaleKernel(composed, outputscale_prior=outputscale_prior)
+        else:
             if outputscale_prior is not None:
                 raise ValueError("outputscale_prior requires an outer ScaleKernel.")
-            return composed
-        return gpytorch.kernels.ScaleKernel(composed, outputscale_prior=outputscale_prior)
+            scaled = composed
+
+        if kernel_spec.time_varying is not None:
+            from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
+
+            tv_spec = kernel_spec.time_varying
+            scaled = build_time_varying_kernel(
+                base_kernel=scaled,
+                time_feature_index=tv_spec.time_feature_index,
+                target=tv_spec.target.value,
+                outputscale_bias_limit=tv_spec.outputscale_bias_limit,
+                outputscale_slope_limit=tv_spec.outputscale_slope_limit,
+            )
+
+        return scaled
 
     should_wrap = wrap_in_scale and kernel_spec.kernel_type != KernelType.SPECTRAL_MIXTURE
     if should_wrap:

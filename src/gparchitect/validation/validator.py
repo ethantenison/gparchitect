@@ -287,11 +287,6 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
                 f"Feature group '{group_name}': time_varying.outputscale_slope_limit must be > 0, "
                 f"got {tv.outputscale_slope_limit}."
             )
-        if kernel.children:
-            result.errors.append(
-                f"Feature group '{group_name}': time_varying is not supported on composed kernels "
-                "(kernels with children).  Set time_varying on a leaf kernel."
-            )
 
     for child in kernel.children:
         _check_kernel_spec(group_name, child, feature_count, result)

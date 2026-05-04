@@ -579,8 +579,8 @@ class TestTimeVaryingValidation:
         assert any("outputscale_bias_limit" in e for e in result.errors)
         assert any("outputscale_slope_limit" in e for e in result.errors)
 
-    def test_time_varying_on_composed_kernel_fails(self) -> None:
-        """time_varying is not supported on composed kernels (with children)."""
+    def test_time_varying_on_composed_kernel_passes(self) -> None:
+        """time_varying is supported on composed kernels in Tier 2."""
         spec = GPSpec(
             model_class=ModelClass.SINGLE_TASK_GP,
             feature_groups=[
@@ -605,8 +605,7 @@ class TestTimeVaryingValidation:
             output_dim=1,
         )
         result = validate_dsl(spec)
-        assert not result.is_valid
-        assert any("time_varying" in e for e in result.errors)
+        assert result.is_valid, result.errors
 
 
 class TestTimeVaryingRuntimeGuards:
@@ -638,8 +637,10 @@ class TestTimeVaryingRuntimeGuards:
         from gparchitect.builders.builder import build_model_from_dsl
 
         spec = _make_time_varying_spec(TimeVaryingTarget.OUTPUTSCALE)
-        spec.feature_groups[0].kernel.time_varying.outputscale_bias_limit = 1.5
-        spec.feature_groups[0].kernel.time_varying.outputscale_slope_limit = 2.5
+        tv_spec = spec.feature_groups[0].kernel.time_varying
+        assert tv_spec is not None
+        tv_spec.outputscale_bias_limit = 1.5
+        tv_spec.outputscale_slope_limit = 2.5
 
         train_x = torch.linspace(0.0, 1.0, 24, dtype=torch.double).unsqueeze(-1)
         train_y = torch.sin(2.0 * torch.pi * train_x)
@@ -652,6 +653,210 @@ class TestTimeVaryingRuntimeGuards:
 
         assert float(bias) == pytest.approx(1.5, abs=1e-6)
         assert float(slope) == pytest.approx(2.5, abs=1e-6)
+
+    def test_outputscale_time_varying_wraps_composed_kernel(self) -> None:
+        torch = pytest.importorskip("torch")
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="time",
+                    feature_indices=[0],
+                    kernel=KernelSpec(
+                        kernel_type=KernelType.MATERN_52,
+                        composition=CompositionType.ADDITIVE,
+                        children=[
+                            KernelSpec(kernel_type=KernelType.MATERN_52),
+                            KernelSpec(kernel_type=KernelType.RBF),
+                        ],
+                        time_varying=TimeVaryingSpec(
+                            target=TimeVaryingTarget.OUTPUTSCALE,
+                            time_feature_index=0,
+                        ),
+                    ),
+                )
+            ],
+            input_dim=1,
+            output_dim=1,
+        )
+
+        train_x = torch.linspace(0.0, 1.0, 24, dtype=torch.double).unsqueeze(-1)
+        train_y = torch.sin(2.0 * torch.pi * train_x)
+        model = build_model_from_dsl(spec, train_x, train_y)
+
+        assert hasattr(model.covar_module, "raw_tv_bias")
+        assert hasattr(model.covar_module, "raw_tv_slope")
+        assert hasattr(model.covar_module, "_modulation")
+
+    def test_lengthscale_time_varying_wraps_composed_kernel(self) -> None:
+        torch = pytest.importorskip("torch")
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="time",
+                    feature_indices=[0],
+                    kernel=KernelSpec(
+                        kernel_type=KernelType.MATERN_52,
+                        composition=CompositionType.MULTIPLICATIVE,
+                        children=[
+                            KernelSpec(kernel_type=KernelType.MATERN_52),
+                            KernelSpec(kernel_type=KernelType.RBF),
+                        ],
+                        time_varying=TimeVaryingSpec(
+                            target=TimeVaryingTarget.LENGTHSCALE,
+                            time_feature_index=0,
+                        ),
+                    ),
+                )
+            ],
+            input_dim=1,
+            output_dim=1,
+        )
+
+        train_x = torch.linspace(0.0, 1.0, 24, dtype=torch.double).unsqueeze(-1)
+        train_y = torch.sin(2.0 * torch.pi * train_x)
+        model = build_model_from_dsl(spec, train_x, train_y)
+
+        assert hasattr(model.covar_module, "raw_tv_bias")
+        assert hasattr(model.covar_module, "raw_tv_slope")
+        assert hasattr(model.covar_module, "_effective_lengthscale")
+
+    def test_outputscale_time_varying_changes_with_time_for_composed_kernel(self) -> None:
+        torch = pytest.importorskip("torch")
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="time",
+                    feature_indices=[0],
+                    kernel=KernelSpec(
+                        kernel_type=KernelType.MATERN_52,
+                        composition=CompositionType.ADDITIVE,
+                        children=[
+                            KernelSpec(kernel_type=KernelType.MATERN_52),
+                            KernelSpec(kernel_type=KernelType.RBF),
+                        ],
+                        time_varying=TimeVaryingSpec(
+                            target=TimeVaryingTarget.OUTPUTSCALE,
+                            time_feature_index=0,
+                        ),
+                    ),
+                )
+            ],
+            input_dim=1,
+            output_dim=1,
+        )
+
+        train_x = torch.linspace(0.0, 1.0, 24, dtype=torch.double).unsqueeze(-1)
+        train_y = torch.sin(2.0 * torch.pi * train_x)
+        model = build_model_from_dsl(spec, train_x, train_y)
+
+        with torch.no_grad():
+            model.covar_module.raw_tv_bias.fill_(0.0)
+            model.covar_module.raw_tv_slope.fill_(1.0)
+
+            x_early = torch.tensor([[0.05]], dtype=torch.double)
+            x_late = torch.tensor([[0.95]], dtype=torch.double)
+            k_early = float(model.covar_module(x_early, x_early).to_dense().item())
+            k_late = float(model.covar_module(x_late, x_late).to_dense().item())
+
+        assert k_early != pytest.approx(k_late, rel=1e-3)
+        assert k_late > k_early
+
+    def test_lengthscale_time_varying_changes_with_time_for_composed_kernel(self) -> None:
+        torch = pytest.importorskip("torch")
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="time",
+                    feature_indices=[0],
+                    kernel=KernelSpec(
+                        kernel_type=KernelType.MATERN_52,
+                        composition=CompositionType.MULTIPLICATIVE,
+                        children=[
+                            KernelSpec(kernel_type=KernelType.MATERN_52),
+                            KernelSpec(kernel_type=KernelType.RBF),
+                        ],
+                        time_varying=TimeVaryingSpec(
+                            target=TimeVaryingTarget.LENGTHSCALE,
+                            time_feature_index=0,
+                        ),
+                    ),
+                )
+            ],
+            input_dim=1,
+            output_dim=1,
+        )
+
+        train_x = torch.linspace(0.0, 1.0, 24, dtype=torch.double).unsqueeze(-1)
+        train_y = torch.sin(2.0 * torch.pi * train_x)
+        model = build_model_from_dsl(spec, train_x, train_y)
+
+        with torch.no_grad():
+            model.covar_module.raw_tv_bias.fill_(0.0)
+            model.covar_module.raw_tv_slope.fill_(1.0)
+
+            x_early = torch.tensor([[0.10], [0.15]], dtype=torch.double)
+            x_late = torch.tensor([[0.80], [0.85]], dtype=torch.double)
+            k_early = model.covar_module(x_early, x_early).to_dense()[0, 1].item()
+            k_late = model.covar_module(x_late, x_late).to_dense()[0, 1].item()
+
+        # With positive slope, late-time effective lengthscale is larger,
+        # so equal temporal gaps produce stronger covariance at late time.
+        assert float(k_late) > float(k_early)
+
+    def test_time_varying_composed_kernel_supports_ard(self) -> None:
+        torch = pytest.importorskip("torch")
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="time_plus_aux",
+                    feature_indices=[0, 1],
+                    kernel=KernelSpec(
+                        kernel_type=KernelType.MATERN_52,
+                        composition=CompositionType.ADDITIVE,
+                        children=[
+                            KernelSpec(kernel_type=KernelType.MATERN_52, ard=True),
+                            KernelSpec(kernel_type=KernelType.RBF, ard=True),
+                        ],
+                        time_varying=TimeVaryingSpec(
+                            target=TimeVaryingTarget.OUTPUTSCALE,
+                            time_feature_index=0,
+                        ),
+                    ),
+                )
+            ],
+            input_dim=2,
+            output_dim=1,
+        )
+
+        t = torch.linspace(0.0, 1.0, 24, dtype=torch.double)
+        x_aux = torch.linspace(-1.0, 1.0, 24, dtype=torch.double)
+        train_x = torch.stack([t, x_aux], dim=-1)
+        train_y = (torch.sin(2.0 * torch.pi * t) + 0.2 * x_aux).unsqueeze(-1)
+
+        model = build_model_from_dsl(spec, train_x, train_y)
+
+        lengthscale_params = [param for name, param in model.named_parameters() if "lengthscale" in name]
+        assert lengthscale_params
+        assert any(param.shape[-1] == 2 for param in lengthscale_params if param.ndim >= 1)
+
+        with torch.no_grad():
+            k = model.covar_module(train_x[:3], train_x[:3]).to_dense()
+        assert torch.isfinite(k).all()
 
 
 # ---------------------------------------------------------------------------

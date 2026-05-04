@@ -126,8 +126,8 @@ For the current validated contract:
 - `recency_filtering` is dataset truncation (Tier 1), not true likelihood weighting.
   The canonical field name is `recency_filtering`; the old name `recency_weighting` is removed.
 - `time_varying` on a `KernelSpec` (Tier 2) wraps the base kernel with a linear modulation.
-  Only `parameterization="linear"` is supported.  Composed kernels (with children) may not
-  carry `time_varying`.
+  Only `parameterization="linear"` is supported.  Leaf and composed kernels (with children)
+  may carry `time_varying`.
 - `input_warping` on `ExecutionSpec` (Tier 2) applies a Kumaraswamy CDF warp via BoTorch's
   `Warp` input transform.  Input scaling should be active for the warp to operate in `[0, 1]`.
 - `heteroskedastic_noise=True` is currently rejected by the validator as a forward-compatibility
