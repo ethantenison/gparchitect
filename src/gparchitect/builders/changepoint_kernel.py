@@ -138,8 +138,10 @@ class ChangepointKernel(Kernel):
         gate1 = self._sigmoid_gate(x1)  # (..., N)
         gate2 = self._sigmoid_gate(x2)  # (..., M)
 
-        k_before = self.kernel_before(x1, x2, **params).evaluate()
-        k_after = self.kernel_after(x1, x2, **params).evaluate()
+        # Sub-kernels return LinearOperator objects in modern GPyTorch.
+        # Materialize to dense tensors for gate-weighted arithmetic below.
+        k_before = self.kernel_before(x1, x2, **params).to_dense()
+        k_after = self.kernel_after(x1, x2, **params).to_dense()
 
         # outer products of gate values
         gate_before = gate1.unsqueeze(-1) * gate2.unsqueeze(-2)  # (..., N, M)

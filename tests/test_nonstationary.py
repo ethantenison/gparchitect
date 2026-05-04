@@ -1168,6 +1168,25 @@ class TestInputWarpingBuilder:
         model = build_model_from_dsl(spec, train_X, train_Y)
         assert isinstance(model.input_transform, Warp)
 
+    def test_warp_transform_keeps_extrapolation_resolution_when_scaled(self) -> None:
+        """Scaled extrapolation inputs should not collapse to one warped coordinate."""
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        train_X = torch.linspace(0.0, 0.7, 12, dtype=torch.double).unsqueeze(-1)
+        train_Y = train_X**2
+        test_X = torch.linspace(0.71, 1.0, 8, dtype=torch.double).unsqueeze(-1)
+
+        spec = _make_input_warping_spec()
+        model = build_model_from_dsl(spec, train_X, train_Y)
+        model.eval()
+
+        with torch.no_grad():
+            transformed_test = model.input_transform(test_X).squeeze(-1)
+
+        assert transformed_test.min() < transformed_test.max()
+
     def test_warp_transform_changes_predictions(self, small_dataset) -> None:  # type: ignore[no-untyped-def]
         """A model with non-identity input warping should produce different predictions than without.
 

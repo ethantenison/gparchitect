@@ -522,7 +522,7 @@ def _build_input_transform(
     spec: GPSpec,
     feature_index_map: dict[int, int],
     full_X: "torch.Tensor",
-) -> "object | None":
+) -> "Any | None":
     """Build an optional BoTorch input transform from the ExecutionSpec.
 
     Currently only supports the Tier 2 Kumaraswamy input warp.  Returns None when
@@ -550,7 +550,14 @@ def _build_input_transform(
     n_cols = full_X.shape[-1]
     mapped_index = max(0, min(mapped_index, n_cols - 1))
 
-    warp_transform = Warp(indices=[mapped_index], d=n_cols)
+    # When input_scaling is enabled, the DSL contract expects continuous inputs in [0, 1].
+    # Provide explicit unit-cube bounds so Warp does not learn bounds from only the
+    # training subset (which can collapse extrapolation points to a constant value).
+    warp_bounds = None
+    if spec.execution.input_scaling:
+        warp_bounds = full_X.new_tensor([[0.0], [1.0]])
+
+    warp_transform = Warp(indices=[mapped_index], d=n_cols, bounds=warp_bounds)
 
     if warping_spec.concentration0 is not None or warping_spec.concentration1 is not None:
         # Use the Warp's built-in initialize() method which respects constraints.
