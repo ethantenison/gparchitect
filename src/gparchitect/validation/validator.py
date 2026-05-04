@@ -46,6 +46,7 @@ from gparchitect.dsl.schema import (
     PriorSpec,
     RecencyFilteringMode,
     SpectralMixtureInitialization,
+    TimeVaryingSpec,
 )
 
 logger = logging.getLogger(__name__)
@@ -292,7 +293,7 @@ def _check_changepoint_kernel_spec(
     _check_kernel_spec(group_name, kernel.kernel_after, feature_count, result)
 
 
-def _check_time_varying(group_name: str, time_varying_spec, result: ValidationResult) -> None:  # noqa: ANN001
+def _check_time_varying(group_name: str, time_varying_spec: TimeVaryingSpec, result: ValidationResult) -> None:
     """Validate a TimeVaryingSpec."""
     if time_varying_spec.parameterization != "linear":
         result.errors.append(
