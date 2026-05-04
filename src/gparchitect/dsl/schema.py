@@ -208,11 +208,21 @@ class TimeVaryingSpec(BaseModel):
         time_feature_index: Zero-based column index of the time-like feature.
         parameterization: The functional form of the time dependence.
             Currently only "linear" is supported.
+        outputscale_bias_limit: Optional max absolute value for the effective
+            outputscale modulation bias after tanh squashing.  Used only when
+            target=OUTPUTSCALE.  Smaller values constrain amplitude variation
+            more strongly.
+        outputscale_slope_limit: Optional max absolute value for the effective
+            outputscale modulation slope after tanh squashing.  Used only when
+            target=OUTPUTSCALE.  Smaller values constrain temporal growth/decay
+            of amplitude more strongly.
     """
 
     target: TimeVaryingTarget
     time_feature_index: int
     parameterization: str = "linear"
+    outputscale_bias_limit: float = 4.0
+    outputscale_slope_limit: float = 4.0
 
 
 class WarpType(str, Enum):

@@ -310,6 +310,8 @@ def _build_gpytorch_kernel_with_active_dims(
             base_kernel=scaled,
             time_feature_index=tv_spec.time_feature_index,
             target=tv_spec.target.value,
+            outputscale_bias_limit=tv_spec.outputscale_bias_limit,
+            outputscale_slope_limit=tv_spec.outputscale_slope_limit,
         )
 
     return scaled

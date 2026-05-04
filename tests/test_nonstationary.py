@@ -242,6 +242,8 @@ class TestTimeVaryingDSL:
         tv = TimeVaryingSpec(target=TimeVaryingTarget.OUTPUTSCALE, time_feature_index=0)
         assert tv.parameterization == "linear"
         assert tv.time_feature_index == 0
+        assert tv.outputscale_bias_limit == pytest.approx(4.0)
+        assert tv.outputscale_slope_limit == pytest.approx(4.0)
 
     def test_kernel_spec_accepts_time_varying(self) -> None:
         kernel = KernelSpec(
@@ -262,6 +264,8 @@ class TestTimeVaryingDSL:
         assert tv["target"] == "outputscale"
         assert tv["time_feature_index"] == 0
         assert tv["parameterization"] == "linear"
+        assert tv["outputscale_bias_limit"] == pytest.approx(4.0)
+        assert tv["outputscale_slope_limit"] == pytest.approx(4.0)
 
     def test_time_varying_lengthscale_serializes_round_trip(self) -> None:
         spec = _make_time_varying_spec(TimeVaryingTarget.LENGTHSCALE)
@@ -549,6 +553,32 @@ class TestTimeVaryingValidation:
         assert not result.is_valid
         assert any("time_feature_index" in e for e in result.errors)
 
+    def test_time_varying_nonpositive_outputscale_limits_fail(self) -> None:
+        spec = GPSpec(
+            model_class=ModelClass.SINGLE_TASK_GP,
+            feature_groups=[
+                FeatureGroupSpec(
+                    name="time",
+                    feature_indices=[0],
+                    kernel=KernelSpec(
+                        kernel_type=KernelType.MATERN_52,
+                        time_varying=TimeVaryingSpec(
+                            target=TimeVaryingTarget.OUTPUTSCALE,
+                            time_feature_index=0,
+                            outputscale_bias_limit=0.0,
+                            outputscale_slope_limit=-1.0,
+                        ),
+                    ),
+                )
+            ],
+            input_dim=1,
+            output_dim=1,
+        )
+        result = validate_dsl(spec)
+        assert not result.is_valid
+        assert any("outputscale_bias_limit" in e for e in result.errors)
+        assert any("outputscale_slope_limit" in e for e in result.errors)
+
     def test_time_varying_on_composed_kernel_fails(self) -> None:
         """time_varying is not supported on composed kernels (with children)."""
         spec = GPSpec(
@@ -577,6 +607,51 @@ class TestTimeVaryingValidation:
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("time_varying" in e for e in result.errors)
+
+
+class TestTimeVaryingRuntimeGuards:
+    def test_outputscale_modulation_is_bounded_under_extreme_raw_parameters(self) -> None:
+        torch = pytest.importorskip("torch")
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_time_varying_spec(TimeVaryingTarget.OUTPUTSCALE)
+
+        train_x = torch.linspace(0.0, 1.0, 24, dtype=torch.double).unsqueeze(-1)
+        train_y = torch.sin(2.0 * torch.pi * train_x)
+        model = build_model_from_dsl(spec, train_x, train_y)
+
+        # Drive raw params to extreme values; bounded mapping should still keep
+        # effective modulation in a numerically stable range.
+        with torch.no_grad():
+            model.covar_module.raw_tv_bias.fill_(1_000.0)
+            model.covar_module.raw_tv_slope.fill_(1_000.0)
+
+            probe_x = torch.tensor([[0.0], [1.0]], dtype=torch.double)
+            modulation = model.covar_module._modulation(probe_x)
+
+        assert torch.isfinite(modulation).all()
+        assert float(modulation.max()) < 10.0
+        assert float(modulation.min()) > 0.0
+
+    def test_outputscale_custom_limits_are_applied(self) -> None:
+        torch = pytest.importorskip("torch")
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        spec = _make_time_varying_spec(TimeVaryingTarget.OUTPUTSCALE)
+        spec.feature_groups[0].kernel.time_varying.outputscale_bias_limit = 1.5
+        spec.feature_groups[0].kernel.time_varying.outputscale_slope_limit = 2.5
+
+        train_x = torch.linspace(0.0, 1.0, 24, dtype=torch.double).unsqueeze(-1)
+        train_y = torch.sin(2.0 * torch.pi * train_x)
+        model = build_model_from_dsl(spec, train_x, train_y)
+
+        with torch.no_grad():
+            model.covar_module.raw_tv_bias.fill_(1_000.0)
+            model.covar_module.raw_tv_slope.fill_(1_000.0)
+            bias, slope = model.covar_module._bounded_params()
+
+        assert float(bias) == pytest.approx(1.5, abs=1e-6)
+        assert float(slope) == pytest.approx(2.5, abs=1e-6)
 
 
 # ---------------------------------------------------------------------------

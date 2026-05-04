@@ -54,12 +54,16 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _SOFTPLUS_BETA = 1.0
+_DEFAULT_TV_OUTPUTSCALE_BIAS_LIMIT = 4.0
+_DEFAULT_TV_OUTPUTSCALE_SLOPE_LIMIT = 4.0
 
 
 def build_time_varying_kernel(
     base_kernel: "object",
     time_feature_index: int,
     target: str,
+    outputscale_bias_limit: float = _DEFAULT_TV_OUTPUTSCALE_BIAS_LIMIT,
+    outputscale_slope_limit: float = _DEFAULT_TV_OUTPUTSCALE_SLOPE_LIMIT,
 ) -> "object":
     """Wrap a base GPyTorch kernel in a time-varying modulation module.
 
@@ -67,6 +71,10 @@ def build_time_varying_kernel(
         base_kernel: A gpytorch.kernels.Kernel instance built from the KernelSpec.
         time_feature_index: Zero-based column index of the time-like feature.
         target: Either "outputscale" or "lengthscale" (from TimeVaryingTarget values).
+        outputscale_bias_limit: Max absolute bound for effective outputscale bias
+            after tanh squashing (used only for outputscale target).
+        outputscale_slope_limit: Max absolute bound for effective outputscale slope
+            after tanh squashing (used only for outputscale target).
 
     Returns:
         A gpytorch.kernels.Kernel instance that adds a time-dependent modulation.
@@ -75,7 +83,12 @@ def build_time_varying_kernel(
         ValueError: If target is not a recognised TimeVaryingTarget value.
     """
     if target == "outputscale":
-        return _TimeVaryingOutputscaleKernel(base_kernel, time_feature_index)
+        return _TimeVaryingOutputscaleKernel(
+            base_kernel,
+            time_feature_index,
+            outputscale_bias_limit=outputscale_bias_limit,
+            outputscale_slope_limit=outputscale_slope_limit,
+        )
     if target == "lengthscale":
         return _TimeVaryingLengthscaleKernel(base_kernel, time_feature_index)
     raise ValueError(f"Unknown TimeVaryingTarget value: '{target}'. Expected 'outputscale' or 'lengthscale'.")
@@ -92,7 +105,14 @@ class _TimeVaryingOutputscaleKernel:
     the base kernel's correlation structure intact.
     """
 
-    def __new__(cls, base_kernel: "object", time_feature_index: int) -> "object":
+    def __new__(
+        cls,
+        base_kernel: "object",
+        time_feature_index: int,
+        *,
+        outputscale_bias_limit: float,
+        outputscale_slope_limit: float,
+    ) -> "object":
         import gpytorch
         import torch
 
@@ -103,14 +123,27 @@ class _TimeVaryingOutputscaleKernel:
                 super().__init__()
                 self.base_kernel = base_kernel
                 self.time_feature_index = time_feature_index
+                self.outputscale_bias_limit = outputscale_bias_limit
+                self.outputscale_slope_limit = outputscale_slope_limit
                 # Initialize bias to 0 and slope to 0 → s(t) starts at softplus(0) ≈ 0.693
                 self.register_parameter("raw_tv_bias", torch.nn.Parameter(torch.zeros(1)))
                 self.register_parameter("raw_tv_slope", torch.nn.Parameter(torch.zeros(1)))
 
+            def _bounded_params(self) -> tuple["torch.Tensor", "torch.Tensor"]:
+                """Map unconstrained raw parameters to bounded effective values.
+
+                Bounded parameters prevent runaway modulation growth in outputscale-only
+                regimes where the optimizer can otherwise drive very large slopes.
+                """
+                bias = self.outputscale_bias_limit * torch.tanh(self.raw_tv_bias)
+                slope = self.outputscale_slope_limit * torch.tanh(self.raw_tv_slope)
+                return bias, slope
+
             def _modulation(self, x: "torch.Tensor") -> "torch.Tensor":
                 """Compute s(t) = softplus(bias + slope · t) for each row in x."""
                 t = x[..., self.time_feature_index]
-                return torch.nn.functional.softplus(self.raw_tv_bias + self.raw_tv_slope * t)
+                bias, slope = self._bounded_params()
+                return torch.nn.functional.softplus(bias + slope * t)
 
             def forward(
                 self,
