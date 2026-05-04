@@ -678,8 +678,9 @@ def _apply_detected_priors(
                     kernel_spec.outputscale_prior = prior
                 elif target == "period":
                     kernel_spec.period_prior = prior
-            elif target == "outputscale":
-                # ChangepointKernelSpec also has outputscale_prior for the outer ScaleKernel.
+            elif target == "outputscale" and hasattr(kernel_spec, "outputscale_prior"):
+                # CompositeKernelSpec and ChangepointKernelSpec both have outputscale_prior
+                # for the outer ScaleKernel wrapper.
                 kernel_spec.outputscale_prior = prior
 
 

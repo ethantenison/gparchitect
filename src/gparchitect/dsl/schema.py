@@ -424,6 +424,7 @@ class CompositeKernelSpec(BaseModel):
 
     kind: Literal["composite"] = "composite"
     composition: CompositionType
+    # KernelExpr is defined after this class; forward reference is resolved by model_rebuild() below.
     children: list[KernelExpr]  # type: ignore[type-arg]
     outputscale_prior: PriorSpec | None = None
     time_varying: TimeVaryingSpec | None = None
@@ -439,7 +440,7 @@ class CompositeKernelSpec(BaseModel):
 
     @field_validator("children")
     @classmethod
-    def _validate_children(cls, value: list) -> list:  # type: ignore[type-arg]
+    def _validate_children(cls, value: list[Any]) -> list[Any]:
         if len(value) < 2:  # noqa: PLR2004
             raise ValueError(
                 f"CompositeKernelSpec must have at least 2 children, got {len(value)}."
@@ -460,6 +461,7 @@ class ChangepointKernelSpec(BaseModel):
     """
 
     kind: Literal["changepoint"] = "changepoint"
+    # KernelExpr is defined after this class; forward reference resolved by model_rebuild() below.
     kernel_before: KernelExpr  # type: ignore[valid-type]
     kernel_after: KernelExpr  # type: ignore[valid-type]
     changepoint_location: float | None = None
@@ -471,6 +473,14 @@ KernelExpr = Annotated[
     Union[LeafKernelSpec, CompositeKernelSpec, ChangepointKernelSpec],
     Field(discriminator="kind"),
 ]
+"""Canonical discriminated union for all kernel expression nodes.
+
+This is the authoritative kernel representation in the DSL.  Use this type
+wherever a kernel specification is accepted.  The ``kind`` discriminator field
+routes parsing to the correct subtype: ``"leaf"``, ``"composite"``, or
+``"changepoint"``.  Legacy ``KernelSpec`` payloads are auto-normalized to this
+form by ``FeatureGroupSpec``'s field validator.
+"""
 
 # Resolve forward references in models with recursive KernelExpr fields.
 CompositeKernelSpec.model_rebuild()
@@ -595,7 +605,7 @@ class FeatureGroupSpec(BaseModel):
 
     name: str
     feature_indices: list[int] = Field(default_factory=list)
-    kernel: KernelExpr  # type: ignore[type-arg]
+    kernel: KernelExpr  # type: ignore[type-arg]  # forward ref resolved after model_rebuild()
 
     @field_validator("kernel", mode="before")
     @classmethod

@@ -14,7 +14,6 @@ from gparchitect.dsl.schema import (
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
-    KernelExpr,  # noqa: F401
     KernelSpec,
     KernelType,
     LeafKernelSpec,

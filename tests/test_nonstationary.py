@@ -146,7 +146,10 @@ class TestChangepointKernelDSL:
         assert kernel.kernel_after.kernel_type == KernelType.RBF
 
     def test_changepoint_fields_default_to_none(self) -> None:
-        kernel = KernelSpec(kernel_type=KernelType.MATERN_52)
+        kernel = ChangepointKernelSpec(
+            kernel_before=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+            kernel_after=LeafKernelSpec(kernel_type=KernelType.RBF),
+        )
         assert kernel.changepoint_location is None
         assert kernel.changepoint_steepness is None
 

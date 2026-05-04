@@ -35,6 +35,21 @@ Natural language → GP DSL → Validation → Model Builder → Fit → Validat
 
 The DSL (`GPSpec`) is the single source of truth. Natural language is an interface only.
 
+### Kernel DSL — discriminated union
+
+Kernel specifications use a strict discriminated union (`KernelExpr`) with three node kinds:
+
+- **`LeafKernelSpec`** (`kind="leaf"`) — a single base kernel family (RBF, Matérn, etc.)
+  with optional ARD, priors, and family-specific parameters.
+- **`CompositeKernelSpec`** (`kind="composite"`) — an additive or multiplicative composition
+  over two or more child `KernelExpr` nodes.
+- **`ChangepointKernelSpec`** (`kind="changepoint"`) — a changepoint transition between
+  a `kernel_before` and a `kernel_after` node.
+
+The old `KernelSpec` class remains for backward compatibility.  `FeatureGroupSpec` automatically
+normalizes legacy `KernelSpec` payloads to the canonical `KernelExpr` form.  Payloads with
+ambiguous shapes (e.g. children present but `composition=none`) raise an actionable `ValueError`.
+
 ## Quick Start
 
 ```python

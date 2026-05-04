@@ -222,8 +222,7 @@ def _check_leaf_kernel_spec(
     if kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
         if kernel.num_mixtures is not None and kernel.num_mixtures < 1:
             result.errors.append(
-                f"Feature group '{group_name}': SpectralMixture num_mixtures must be >= 1, "
-                f"got {kernel.num_mixtures}."
+                f"Feature group '{group_name}': SpectralMixture num_mixtures must be >= 1, got {kernel.num_mixtures}."
             )
         if kernel.spectral_init not in {
             SpectralMixtureInitialization.FROM_DATA,
