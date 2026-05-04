@@ -424,7 +424,7 @@ class CompositeKernelSpec(BaseModel):
 
     kind: Literal["composite"] = "composite"
     composition: CompositionType
-    children: list[KernelExpr] = Field(default_factory=list)  # type: ignore[type-arg]
+    children: list[KernelExpr]  # type: ignore[type-arg]
     outputscale_prior: PriorSpec | None = None
     time_varying: TimeVaryingSpec | None = None
 
@@ -460,8 +460,8 @@ class ChangepointKernelSpec(BaseModel):
     """
 
     kind: Literal["changepoint"] = "changepoint"
-    kernel_before: KernelExpr  # type: ignore[type-arg]
-    kernel_after: KernelExpr  # type: ignore[type-arg]
+    kernel_before: KernelExpr  # type: ignore[valid-type]
+    kernel_after: KernelExpr  # type: ignore[valid-type]
     changepoint_location: float | None = None
     changepoint_steepness: float | None = None
     outputscale_prior: PriorSpec | None = None
@@ -558,13 +558,14 @@ def _legacy_dict_to_kernel_expr(value: dict[str, Any]) -> dict[str, Any]:
                 tagged_children.append(_legacy_dict_to_kernel_expr(child))
             else:
                 tagged_children.append(child)
-        return {
-            **value,
-            "kind": "changepoint",
-            # Support both legacy `children` list format and explicit kernel_before/kernel_after fields.
-            "kernel_before": tagged_children[0] if len(tagged_children) > 0 else value.get("kernel_before"),
-            "kernel_after": tagged_children[1] if len(tagged_children) > 1 else value.get("kernel_after"),
-        }
+        kernel_before = tagged_children[0] if len(tagged_children) > 0 else value.get("kernel_before")
+        kernel_after = tagged_children[1] if len(tagged_children) > 1 else value.get("kernel_after")
+        if kernel_before is None or kernel_after is None:
+            raise ValueError(
+                "Legacy Changepoint KernelSpec dict must provide either 'children' (2 items) or "
+                "explicit 'kernel_before' and 'kernel_after' fields."
+            )
+        return {**value, "kind": "changepoint", "kernel_before": kernel_before, "kernel_after": kernel_after}
 
     if children:
         if composition not in {"additive", "multiplicative"}:

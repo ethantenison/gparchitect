@@ -104,8 +104,7 @@ def _build_gpytorch_kernel(kernel_spec: KernelExpr, num_features: int):  # noqa:
         A gpytorch.kernels.Kernel instance.
     """
     active_dims = tuple(range(num_features))
-    ard_num_dims = num_features if (kernel_spec.kind == "leaf" and kernel_spec.ard) else None
-    return _build_gpytorch_kernel_with_active_dims(kernel_spec, active_dims, ard_num_dims)
+    return _build_gpytorch_kernel_with_active_dims(kernel_spec, active_dims)
 
 
 def _build_gpytorch_kernel_with_active_dims(

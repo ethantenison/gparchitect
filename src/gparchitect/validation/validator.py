@@ -292,27 +292,27 @@ def _check_changepoint_kernel_spec(
     _check_kernel_spec(group_name, kernel.kernel_after, feature_count, result)
 
 
-def _check_time_varying(group_name: str, tv, result: ValidationResult) -> None:  # noqa: ANN001
+def _check_time_varying(group_name: str, time_varying_spec, result: ValidationResult) -> None:  # noqa: ANN001
     """Validate a TimeVaryingSpec."""
-    if tv.parameterization != "linear":
+    if time_varying_spec.parameterization != "linear":
         result.errors.append(
             f"Feature group '{group_name}': time_varying.parameterization must be 'linear', "
-            f"got '{tv.parameterization}'."
+            f"got '{time_varying_spec.parameterization}'."
         )
-    if tv.time_feature_index < 0:
+    if time_varying_spec.time_feature_index < 0:
         result.errors.append(
             f"Feature group '{group_name}': time_varying.time_feature_index must be >= 0, "
-            f"got {tv.time_feature_index}."
+            f"got {time_varying_spec.time_feature_index}."
         )
-    if tv.outputscale_bias_limit <= 0:
+    if time_varying_spec.outputscale_bias_limit <= 0:
         result.errors.append(
             f"Feature group '{group_name}': time_varying.outputscale_bias_limit must be > 0, "
-            f"got {tv.outputscale_bias_limit}."
+            f"got {time_varying_spec.outputscale_bias_limit}."
         )
-    if tv.outputscale_slope_limit <= 0:
+    if time_varying_spec.outputscale_slope_limit <= 0:
         result.errors.append(
             f"Feature group '{group_name}': time_varying.outputscale_slope_limit must be > 0, "
-            f"got {tv.outputscale_slope_limit}."
+            f"got {time_varying_spec.outputscale_slope_limit}."
         )
 
 

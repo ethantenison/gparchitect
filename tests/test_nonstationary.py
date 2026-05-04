@@ -354,8 +354,6 @@ class TestChangepointValidation:
         assert any("Changepoint" in e and "one active feature" in e for e in result.errors)
 
     def test_changepoint_with_wrong_child_count_fails(self) -> None:
-        from pydantic import ValidationError
-
         with pytest.raises(ValidationError):
             FeatureGroupSpec(
                 name="time",
