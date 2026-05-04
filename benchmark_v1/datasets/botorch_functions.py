@@ -60,10 +60,7 @@ def _require_botorch() -> None:
 # Branin (2-dimensional)
 # ---------------------------------------------------------------------------
 
-_BRANIN_EQ = (
-    "Branin(x0, x1) — standard 2D benchmark function with 3 global optima."
-    " x0 in [-5, 10], x1 in [0, 15]."
-)
+_BRANIN_EQ = "Branin(x0, x1) — standard 2D benchmark function with 3 global optima. x0 in [-5, 10], x1 in [0, 15]."
 
 
 def make_branin_dataset(
@@ -128,10 +125,7 @@ def make_branin_dataset(
 # Hartmann6 (6-dimensional)
 # ---------------------------------------------------------------------------
 
-_HARTMANN6_EQ = (
-    "Hartmann6(x0..x5) — 6D benchmark function with one global optimum."
-    " All inputs in [0, 1]^6."
-)
+_HARTMANN6_EQ = "Hartmann6(x0..x5) — 6D benchmark function with one global optimum. All inputs in [0, 1]^6."
 
 
 def make_hartmann6_dataset(
@@ -193,10 +187,7 @@ def make_hartmann6_dataset(
 # Rosenbrock (4-dimensional slice)
 # ---------------------------------------------------------------------------
 
-_ROSENBROCK_EQ = (
-    "Rosenbrock(x0..x3) — 4D slice of the Rosenbrock function."
-    " Each input in [-2, 2]."
-)
+_ROSENBROCK_EQ = "Rosenbrock(x0..x3) — 4D slice of the Rosenbrock function. Each input in [-2, 2]."
 
 
 def make_rosenbrock_dataset(

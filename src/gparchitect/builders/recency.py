@@ -95,9 +95,7 @@ def apply_recency_filtering(
 
     n_kept = int(mask.sum().item())
     if n_kept == 0:
-        logger.warning(
-            "RecencyFiltering: filter left 0 observations; retaining the single most recent observation."
-        )
+        logger.warning("RecencyFiltering: filter left 0 observations; retaining the single most recent observation.")
         most_recent_idx = int(torch.argmax(time_col).item())
         mask = torch.zeros(n_obs, dtype=torch.bool, device=train_X.device)
         mask[most_recent_idx] = True
@@ -175,9 +173,6 @@ def _exponential_discount_mask(
     # Guard against log(0) in the threshold; ensure the threshold is reachable
     max_delta_threshold = -math.log(min_weight) / spec.discount_rate
     if float(delta_t.max().item()) > max_delta_threshold * 1e3:
-        logger.debug(
-            "RecencyFiltering: very large time range detected; min_weight threshold may discard most data."
-        )
+        logger.debug("RecencyFiltering: very large time range detected; min_weight threshold may discard most data.")
 
     return weights >= min_weight
-

@@ -486,21 +486,25 @@ def build_run_plan(
                 if noise_filter and not any(abs(noise_std - nf) < 1e-9 for nf in noise_filter):
                     continue
                 for variant in entry.prompt_variants:
-                    plan.append({
-                        "entry": entry,
-                        "seed": seed,
-                        "noise_std": noise_std,
-                        "model_type": "gparchitect",
-                        "model_id": variant,
-                    })
+                    plan.append(
+                        {
+                            "entry": entry,
+                            "seed": seed,
+                            "noise_std": noise_std,
+                            "model_type": "gparchitect",
+                            "model_id": variant,
+                        }
+                    )
                 for baseline in entry.baselines:
-                    plan.append({
-                        "entry": entry,
-                        "seed": seed,
-                        "noise_std": noise_std,
-                        "model_type": "baseline",
-                        "model_id": baseline,
-                    })
+                    plan.append(
+                        {
+                            "entry": entry,
+                            "seed": seed,
+                            "noise_std": noise_std,
+                            "model_type": "baseline",
+                            "model_id": baseline,
+                        }
+                    )
     return plan
 
 
@@ -624,7 +628,14 @@ def main(
 
         logger.info(
             "[%d/%d] dataset=%s tier=%d seed=%d noise=%.3f type=%s id=%s",
-            i, len(plan), entry.dataset_name, entry.tier, seed, noise_std, model_type, model_id,
+            i,
+            len(plan),
+            entry.dataset_name,
+            entry.tier,
+            seed,
+            noise_std,
+            model_type,
+            model_id,
         )
 
         try:

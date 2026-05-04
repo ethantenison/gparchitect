@@ -1086,15 +1086,14 @@ class TestTimeVaryingBuilder:
 
     def test_outputscale_modulation_produces_different_covariance(self, small_dataset) -> None:  # type: ignore[no-untyped-def]
         """With a non-zero slope, kernel outputs at early and late time differ."""
-        import torch
-        from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
         import gpytorch
+        import torch
+
+        from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
 
         train_X, train_Y = small_dataset
 
-        base_kernel = gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.MaternKernel(nu=2.5)
-        )
+        base_kernel = gpytorch.kernels.ScaleKernel(gpytorch.kernels.MaternKernel(nu=2.5))
         tv_kernel = build_time_varying_kernel(base_kernel, time_feature_index=0, target="outputscale")
 
         # Manually set a non-trivial slope so early vs late time differ
@@ -1160,8 +1159,9 @@ class TestInputWarpingBuilder:
 
     def test_input_warping_transform_is_warp(self, small_dataset) -> None:  # type: ignore[no-untyped-def]
         """The input transform must be a BoTorch Warp instance."""
-        from gparchitect.builders.builder import build_model_from_dsl
         from botorch.models.transforms.input import Warp
+
+        from gparchitect.builders.builder import build_model_from_dsl
 
         train_X, train_Y = small_dataset
         spec = _make_input_warping_spec()
@@ -1175,6 +1175,7 @@ class TestInputWarpingBuilder:
         that deviates from the identity at initialization.
         """
         import torch
+
         from gparchitect.builders.builder import build_model_from_dsl
 
         train_X, train_Y = small_dataset
@@ -1237,4 +1238,3 @@ class TestInputWarpingBuilder:
         model = build_model_from_dsl(spec, train_X, train_Y)
         result = fit_and_validate(model, train_X, train_Y)
         assert result.success, result.error_message
-

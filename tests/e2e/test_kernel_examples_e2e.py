@@ -68,8 +68,7 @@ def test_spectral_mixture_example_runs_end_to_end() -> None:
         {
             "time_index": steps,
             "signal": [
-                math.sin(2.0 * math.pi * step / 4.0) + 0.35 * math.cos(2.0 * math.pi * step / 7.0)
-                for step in steps
+                math.sin(2.0 * math.pi * step / 4.0) + 0.35 * math.cos(2.0 * math.pi * step / 7.0) for step in steps
             ],
         }
     )
@@ -101,9 +100,7 @@ def test_polynomial_kernel_example_runs_end_to_end() -> None:
         {
             "x1": x1_values,
             "x2": x2_values,
-            "target": [
-                1.0 + 0.8 * x1 + 0.4 * x2 + 0.9 * x1 * x2 + 0.6 * x1**2 for x1, x2 in zip(x1_values, x2_values)
-            ],
+            "target": [1.0 + 0.8 * x1 + 0.4 * x2 + 0.9 * x1 * x2 + 0.6 * x1**2 for x1, x2 in zip(x1_values, x2_values)],
         }
     )
 
@@ -244,10 +241,7 @@ def test_three_group_mixed_kernel_example_runs_end_to_end() -> None:
             "seasonal_feature": seasonal_feature,
             "decay_feature": decay_feature,
             "target": [
-                0.4 * trend
-                + 0.35 * math.sin(2.0 * math.pi * seasonal)
-                + 0.75 / ((3.5 * decay) + 1.0)
-                + 0.03
+                0.4 * trend + 0.35 * math.sin(2.0 * math.pi * seasonal) + 0.75 / ((3.5 * decay) + 1.0) + 0.03
                 for trend, seasonal, decay in zip(trend_feature, seasonal_feature, decay_feature)
             ],
         }

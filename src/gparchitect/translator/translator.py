@@ -159,9 +159,7 @@ _PRIOR_TARGET_ALIASES = {
     "observation noise": "noise",
     "noise variance": "noise",
 }
-_PRIOR_DISTRIBUTION_PATTERN = (
-    r"lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform"
-)
+_PRIOR_DISTRIBUTION_PATTERN = r"lognormal|log-normal|halfcauchy|half-cauchy|half\s+cauchy|normal|gamma|uniform"
 _PRIOR_TARGET_PATTERN = (
     r"lengthscale|length\s+scale|outputscale|output\s+scale|period(?:\s+length)?|"
     r"observation\s+noise|noise\s+variance|noise"
@@ -403,8 +401,9 @@ def _detect_recency_filtering(
         time_feature_index = int(tf_match.group(1))
     elif input_feature_names:
         for idx, name in enumerate(input_feature_names):
-            if re.search(r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b",
-                         name, re.IGNORECASE):
+            if re.search(
+                r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b", name, re.IGNORECASE
+            ):
                 time_feature_index = idx
                 break
 
@@ -470,8 +469,9 @@ def _detect_time_varying_spec(
         time_feature_index = int(tf_match.group(1))
     elif input_feature_names:
         for idx, name in enumerate(input_feature_names):
-            if re.search(r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b",
-                         name, re.IGNORECASE):
+            if re.search(
+                r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b", name, re.IGNORECASE
+            ):
                 time_feature_index = idx
                 break
 
@@ -506,8 +506,9 @@ def _detect_input_warping(
         time_feature_index = int(tf_match.group(1))
     elif input_feature_names:
         for idx, name in enumerate(input_feature_names):
-            if re.search(r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b",
-                         name, re.IGNORECASE):
+            if re.search(
+                r"\btime\b|\btimestamp\b|\bt\b|\bdate\b|\bday\b|\bweek\b|\bmonth\b|\byear\b", name, re.IGNORECASE
+            ):
                 time_feature_index = idx
                 break
 

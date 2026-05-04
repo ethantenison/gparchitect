@@ -360,8 +360,7 @@ def _build_covariance_module(
     import gpytorch
 
     group_kernels = [
-        _build_group_kernel(group, feature_index_map, train_X=train_X, train_Y=train_Y)
-        for group in spec.feature_groups
+        _build_group_kernel(group, feature_index_map, train_X=train_X, train_Y=train_Y) for group in spec.feature_groups
     ]
 
     if len(group_kernels) == 1:
@@ -391,9 +390,7 @@ def _build_covariance_module(
                     ],
                 )
                 interaction_terms.append(
-                    gpytorch.kernels.ScaleKernel(
-                        gpytorch.kernels.ProductKernel(*interaction_components)
-                    )
+                    gpytorch.kernels.ScaleKernel(gpytorch.kernels.ProductKernel(*interaction_components))
                 )
         combined_kernels = cast(list[Any], group_kernels + interaction_terms)
         return gpytorch.kernels.AdditiveKernel(*combined_kernels)
@@ -412,9 +409,7 @@ def _build_covariance_module(
                 for group in spec.feature_groups
             ],
         )
-        return gpytorch.kernels.ScaleKernel(
-            gpytorch.kernels.ProductKernel(*product_kernels)
-        )
+        return gpytorch.kernels.ScaleKernel(gpytorch.kernels.ProductKernel(*product_kernels))
     if spec.group_composition == CompositionType.NONE:
         raise ValueError("Multiple feature groups require explicit combination semantics; composition=none is invalid.")
     return gpytorch.kernels.AdditiveKernel(*cast(list[Any], group_kernels))
@@ -433,9 +428,7 @@ def _prepare_inputs(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.Tenso
     """
     import torch
 
-    continuous_indices = sorted(
-        {idx for group in spec.feature_groups for idx in group.feature_indices}
-    )
+    continuous_indices = sorted({idx for group in spec.feature_groups for idx in group.feature_indices})
     feature_index_map = {index: position for position, index in enumerate(continuous_indices)}
     continuous_X = train_X[:, continuous_indices]
 

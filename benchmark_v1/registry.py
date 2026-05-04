@@ -189,8 +189,5 @@ def get_entry(dataset_name: str) -> BenchmarkEntry:
         KeyError: If ``dataset_name`` is not registered.
     """
     if dataset_name not in REGISTRY_BY_NAME:
-        raise KeyError(
-            f"Dataset '{dataset_name}' not found in registry. "
-            f"Available: {list_datasets()}"
-        )
+        raise KeyError(f"Dataset '{dataset_name}' not found in registry. Available: {list_datasets()}")
     return REGISTRY_BY_NAME[dataset_name]

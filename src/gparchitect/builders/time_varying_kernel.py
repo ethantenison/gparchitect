@@ -93,8 +93,8 @@ class _TimeVaryingOutputscaleKernel:
     """
 
     def __new__(cls, base_kernel: "object", time_feature_index: int) -> "object":
-        import torch
         import gpytorch
+        import torch
 
         class _Module(gpytorch.kernels.Kernel):
             has_lengthscale = False
@@ -104,12 +104,8 @@ class _TimeVaryingOutputscaleKernel:
                 self.base_kernel = base_kernel
                 self.time_feature_index = time_feature_index
                 # Initialize bias to 0 and slope to 0 → s(t) starts at softplus(0) ≈ 0.693
-                self.register_parameter(
-                    "raw_tv_bias", torch.nn.Parameter(torch.zeros(1))
-                )
-                self.register_parameter(
-                    "raw_tv_slope", torch.nn.Parameter(torch.zeros(1))
-                )
+                self.register_parameter("raw_tv_bias", torch.nn.Parameter(torch.zeros(1)))
+                self.register_parameter("raw_tv_slope", torch.nn.Parameter(torch.zeros(1)))
 
             def _modulation(self, x: "torch.Tensor") -> "torch.Tensor":
                 """Compute s(t) = softplus(bias + slope · t) for each row in x."""
@@ -147,8 +143,8 @@ class _TimeVaryingLengthscaleKernel:
     """
 
     def __new__(cls, base_kernel: "object", time_feature_index: int) -> "object":
-        import torch
         import gpytorch
+        import torch
 
         class _Module(gpytorch.kernels.Kernel):
             has_lengthscale = False
@@ -157,12 +153,8 @@ class _TimeVaryingLengthscaleKernel:
                 super().__init__()
                 self.base_kernel = base_kernel
                 self.time_feature_index = time_feature_index
-                self.register_parameter(
-                    "raw_tv_bias", torch.nn.Parameter(torch.zeros(1))
-                )
-                self.register_parameter(
-                    "raw_tv_slope", torch.nn.Parameter(torch.zeros(1))
-                )
+                self.register_parameter("raw_tv_bias", torch.nn.Parameter(torch.zeros(1)))
+                self.register_parameter("raw_tv_slope", torch.nn.Parameter(torch.zeros(1)))
 
             def _effective_lengthscale(self, x: "torch.Tensor") -> "torch.Tensor":
                 """Compute l(t) = softplus(bias + slope · t) for each row in x."""

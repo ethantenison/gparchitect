@@ -358,7 +358,9 @@ def _select_route(
         source_kind: PlanningSourceKind = "prior_knowledge_handoff" if has_handoff else "structured_summary"
         return "Architecture Focus only", "Explicit architecture-only mode requested.", source_kind, True
 
-    inferred_planning_requested = _infer_planning_requested(input_text) if planning_requested is None else planning_requested
+    inferred_planning_requested = (
+        _infer_planning_requested(input_text) if planning_requested is None else planning_requested
+    )
     if has_handoff:
         return (
             "Architecture Focus only",
@@ -501,7 +503,9 @@ def _build_knowledge_item(sentence: str) -> ExtractedKnowledgeItem:
         classification = "soft prior belief"
         evidence_source = "expert judgment"
         planning_status = "requires validation before use"
-        why_it_matters = "Domain beliefs are useful signals, but they should remain explicit assumptions until validated."
+        why_it_matters = (
+            "Domain beliefs are useful signals, but they should remain explicit assumptions until validated."
+        )
 
     confidence = _infer_confidence(lowered)
     return ExtractedKnowledgeItem(
@@ -514,7 +518,9 @@ def _build_knowledge_item(sentence: str) -> ExtractedKnowledgeItem:
     )
 
 
-def _infer_confidence(lowered_sentence: str) -> Literal["established", "data-supported", "plausible", "anecdotal", "speculative"]:
+def _infer_confidence(
+    lowered_sentence: str,
+) -> Literal["established", "data-supported", "plausible", "anecdotal", "speculative"]:
     if any(keyword in lowered_sentence for keyword in ("must", "always", "never")):
         return "established"
     if any(keyword in lowered_sentence for keyword in ("observed", "measured", "weekly", "increases", "delayed")):
@@ -544,18 +550,25 @@ def _build_open_questions(
 ) -> list[str]:
     questions: list[str] = []
     if not inputs or not outputs:
-        questions.append("Which observed inputs drive the target outputs, and which variables are controllable versus contextual?")
+        questions.append(
+            "Which observed inputs drive the target outputs, and which variables are controllable versus contextual?"
+        )
     if not categorized["noise_and_uncertainty"]:
-        questions.append("Is observation noise roughly constant, or does it vary by regime, range, or operating condition?")
+        questions.append(
+            "Is observation noise roughly constant, or does it vary by regime, range, or operating condition?"
+        )
     if not categorized["temporal_or_multiscale_signals"]:
         questions.append("Are there lagged, seasonal, drifting, or multiscale effects that should shape planning?")
     if not categorized["constraints_and_invariants"]:
-        questions.append("Are there hard feasibility, monotonicity, boundedness, or conservation constraints to preserve?"
+        questions.append(
+            "Are there hard feasibility, monotonicity, boundedness, or conservation constraints to preserve?"
         )
     if not categorized["regimes_and_edge_cases"]:
         questions.append("Which rare regimes or edge cases matter most for evaluation and recovery planning?")
     if not categorized["data_process_risks"]:
-        questions.append("Are there data collection artifacts such as delayed labels, leakage, revisions, or instrumentation changes?")
+        questions.append(
+            "Are there data collection artifacts such as delayed labels, leakage, revisions, or instrumentation changes?"
+        )
     if not categorized["decision_context"]:
         questions.append("How will the model be used, and which errors are most costly in deployment or analysis?")
     return questions[:7]
@@ -566,11 +579,15 @@ def _infer_extension_requirements(categorized: dict[str, list[str]]) -> list[str
     for sentence in categorized["noise_and_uncertainty"]:
         lowered = sentence.lower()
         if "heteroskedastic" in lowered or "noise increases" in lowered:
-            requirements.append("Region-dependent noise may require future heteroskedastic-noise support beyond the current scalar noise DSL.")
+            requirements.append(
+                "Region-dependent noise may require future heteroskedastic-noise support beyond the current scalar noise DSL."
+            )
     for sentence in categorized["constraints_and_invariants"]:
         lowered = sentence.lower()
         if any(keyword in lowered for keyword in ("monotonic", "bounded", "positive", "feasible")):
-            requirements.append("Hard structural constraints should be treated as validation or future DSL-extension work, not as implicit planner defaults.")
+            requirements.append(
+                "Hard structural constraints should be treated as validation or future DSL-extension work, not as implicit planner defaults."
+            )
     return _deduplicate(requirements)
 
 
@@ -582,25 +599,37 @@ def _infer_direct_gp_planning(categorized: dict[str, list[str]]) -> list[str]:
         items.append("Interaction and grouping cues can inform provisional feature-group planning.")
     if categorized["temporal_or_multiscale_signals"]:
         items.append("Temporal and multiscale cues can inform periodic, RQ, or hierarchical planning options.")
-    return items or ["No direct GP planning signals were extracted beyond a generic need for structured prior knowledge."]
+    return items or [
+        "No direct GP planning signals were extracted beyond a generic need for structured prior knowledge."
+    ]
 
 
 def _infer_preprocessing_concerns(categorized: dict[str, list[str]]) -> list[str]:
     items = []
     if categorized["data_process_risks"]:
-        items.append("Data-process risks should be handled through preprocessing, leakage checks, and evaluation design.")
+        items.append(
+            "Data-process risks should be handled through preprocessing, leakage checks, and evaluation design."
+        )
     if categorized["decision_context"]:
-        items.append("Decision context should influence holdout design and error weighting rather than silently altering architecture.")
+        items.append(
+            "Decision context should influence holdout design and error weighting rather than silently altering architecture."
+        )
     return items or ["No preprocessing-specific concerns were extracted from the current prompt."]
 
 
 def _infer_grouping_implications(categorized: dict[str, list[str]], inputs: list[str]) -> list[str]:
     items = []
     if categorized["feature_grouping_signals"]:
-        items.append("Keep explicitly interacting variables in linked feature groups instead of flattening them into one undifferentiated block.")
+        items.append(
+            "Keep explicitly interacting variables in linked feature groups instead of flattening them into one undifferentiated block."
+        )
     if inputs and len(inputs) > 1:
-        items.append("Use provisional per-variable groups first, then relax into shared groups only where the prior knowledge explicitly couples them.")
-    return items or ["Input grouping is unresolved; start with provisional singleton groups until stronger evidence appears."]
+        items.append(
+            "Use provisional per-variable groups first, then relax into shared groups only where the prior knowledge explicitly couples them."
+        )
+    return items or [
+        "Input grouping is unresolved; start with provisional singleton groups until stronger evidence appears."
+    ]
 
 
 def _infer_kernel_implications(categorized: dict[str, list[str]]) -> list[str]:
@@ -608,13 +637,21 @@ def _infer_kernel_implications(categorized: dict[str, list[str]]) -> list[str]:
     text = " ".join(sum(categorized.values(), []))
     lowered = text.lower()
     if any(keyword in lowered for keyword in ("weekly", "seasonal", "periodic")):
-        items.append("Periodic structure is plausible for recurring behavior and should stay explicit in architecture planning.")
+        items.append(
+            "Periodic structure is plausible for recurring behavior and should stay explicit in architecture planning."
+        )
     if any(keyword in lowered for keyword in ("multiscale", "regime", "drift")):
-        items.append("Multiscale or nonstationary signals suggest RQ, Spectral Mixture, or careful hierarchical planning rather than a single smooth kernel assumption.")
+        items.append(
+            "Multiscale or nonstationary signals suggest RQ, Spectral Mixture, or careful hierarchical planning rather than a single smooth kernel assumption."
+        )
     if any(keyword in lowered for keyword in ("smooth", "yield", "degradation")):
-        items.append("Smooth baseline structure supports starting with Matern or RBF-style candidates during architecture planning.")
+        items.append(
+            "Smooth baseline structure supports starting with Matern or RBF-style candidates during architecture planning."
+        )
     if any(keyword in lowered for keyword in ("interaction", "interact")):
-        items.append("Interactions should be preserved through additive-plus-product or hierarchical composition rather than buried in prose.")
+        items.append(
+            "Interactions should be preserved through additive-plus-product or hierarchical composition rather than buried in prose."
+        )
     return items or ["Kernel-family evidence is weak; retain broad candidates until more structure is confirmed."]
 
 
@@ -623,7 +660,9 @@ def _infer_noise_implications(categorized: dict[str, list[str]]) -> list[str]:
         return [
             "Noise behavior should remain explicit in planning, especially when it varies by regime or operating range.",
         ]
-    return ["Noise assumptions are currently underspecified and should default to simple scalar-noise planning until clarified."]
+    return [
+        "Noise assumptions are currently underspecified and should default to simple scalar-noise planning until clarified."
+    ]
 
 
 def _infer_prior_implications(categorized: dict[str, list[str]]) -> list[str]:
@@ -638,7 +677,9 @@ def _infer_multitask_implications(sentences: list[str], outputs: list[str]) -> l
     joined = " ".join(sentences).lower()
     if "task" in joined or len(outputs) > 1:
         return ["Multiple outputs or task indicators may justify MultiTaskGP or ModelListGP planning."]
-    return ["Current prompt looks compatible with single-output planning unless later information introduces task structure."]
+    return [
+        "Current prompt looks compatible with single-output planning unless later information introduces task structure."
+    ]
 
 
 def _infer_evaluation_implications(categorized: dict[str, list[str]]) -> list[str]:
@@ -647,7 +688,9 @@ def _infer_evaluation_implications(categorized: dict[str, list[str]]) -> list[st
         items.append("Evaluation should isolate rare regimes and edge cases rather than averaging them away.")
     if categorized["data_process_risks"]:
         items.append("Evaluation should explicitly guard against leakage, delayed labels, or instrumentation changes.")
-    return items or ["Define evaluation splits that preserve the deployment context before refining architecture choices."]
+    return items or [
+        "Define evaluation splits that preserve the deployment context before refining architecture choices."
+    ]
 
 
 def _infer_recovery_implications(categorized: dict[str, list[str]]) -> list[str]:
@@ -655,7 +698,9 @@ def _infer_recovery_implications(categorized: dict[str, list[str]]) -> list[str]
     if categorized["structural_behaviors"]:
         items.append("Recovery should be prepared to simplify overly rich compositions if fitting becomes unstable.")
     if categorized["noise_and_uncertainty"]:
-        items.append("Recovery may need to fall back to simpler scalar-noise assumptions when richer noise stories are not directly representable.")
+        items.append(
+            "Recovery may need to fall back to simpler scalar-noise assumptions when richer noise stories are not directly representable."
+        )
     return items or ["Recovery planning should preserve a path back to simpler kernels and default noise assumptions."]
 
 
@@ -664,7 +709,9 @@ def _build_feature_groups(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
     if prior_handoff.feature_grouping_signals:
         feature_groups.extend(prior_handoff.feature_grouping_signals)
     elif prior_handoff.inputs:
-        feature_groups.extend(f"Provisional singleton group for {feature_name}." for feature_name in prior_handoff.inputs)
+        feature_groups.extend(
+            f"Provisional singleton group for {feature_name}." for feature_name in prior_handoff.inputs
+        )
     else:
         feature_groups.append("Inputs are not enumerated yet, so feature groups remain provisional.")
     return _deduplicate(feature_groups)
@@ -680,7 +727,9 @@ def _build_group_composition(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
 def _build_kernel_candidates(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
     items: list[str] = []
     combined = " ".join(
-        prior_handoff.structural_behaviors + prior_handoff.temporal_or_multiscale_signals + prior_handoff.regimes_and_edge_cases
+        prior_handoff.structural_behaviors
+        + prior_handoff.temporal_or_multiscale_signals
+        + prior_handoff.regimes_and_edge_cases
     ).lower()
     if any(keyword in combined for keyword in ("weekly", "seasonal", "periodic")):
         items.append("Periodic kernel candidate for recurring structure.")
@@ -702,13 +751,17 @@ def _build_architecture_summary(prior_handoff: PriorKnowledgeHandoff) -> list[st
     if prior_handoff.noise_and_uncertainty:
         summary.append("Noise behavior is planning-relevant and should remain explicit in the DSL-facing handoff.")
     if prior_handoff.data_process_risks:
-        summary.append("Data-process risks are important enough to separate from architecture and handle in preprocessing/evaluation.")
+        summary.append(
+            "Data-process risks are important enough to separate from architecture and handle in preprocessing/evaluation."
+        )
     return _deduplicate(summary)
 
 
 def _build_model_class_implications(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
     if len(prior_handoff.outputs) > 1:
-        return ["Multiple outputs suggest ModelListGP or MultiTaskGP planning depending on expected cross-output correlation."]
+        return [
+            "Multiple outputs suggest ModelListGP or MultiTaskGP planning depending on expected cross-output correlation."
+        ]
     if any("task" in signal.lower() for signal in prior_handoff.candidate_multitask_implications):
         return ["Task structure should be evaluated explicitly before choosing between SingleTaskGP and MultiTaskGP."]
     return ["SingleTaskGP is the default planning baseline unless task or multi-output structure becomes explicit."]
@@ -723,7 +776,9 @@ def _build_ard_implications(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
 def _build_architecture_noise_implications(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
     lowered = " ".join(prior_handoff.noise_and_uncertainty).lower()
     if "heteroskedastic" in lowered or "noise increases" in lowered:
-        return ["Current DSL supports scalar noise planning; region-dependent noise should be flagged as an extension risk."]
+        return [
+            "Current DSL supports scalar noise planning; region-dependent noise should be flagged as an extension risk."
+        ]
     if prior_handoff.noise_and_uncertainty:
         return ["Preserve explicit noise assumptions in planning, but keep them separate from kernel selection."]
     return ["Noise assumptions are underspecified, so architecture should start from learnable scalar noise."]
@@ -731,7 +786,9 @@ def _build_architecture_noise_implications(prior_handoff: PriorKnowledgeHandoff)
 
 def _build_architecture_prior_implications(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
     if prior_handoff.constraints_and_invariants:
-        return ["Do not encode hard constraints as priors unless they can be expressed quantitatively and validated downstream."]
+        return [
+            "Do not encode hard constraints as priors unless they can be expressed quantitatively and validated downstream."
+        ]
     return ["Use default priors unless domain knowledge becomes quantitative enough to justify explicit specification."]
 
 
@@ -748,7 +805,9 @@ def _build_supported_directly(
     if feature_groups:
         supported.append("Feature groups can be represented directly in the current DSL.")
     if kernel_candidates:
-        supported.append("Kernel-family candidates can be expressed as DSL-level planning choices without constructing a model.")
+        supported.append(
+            "Kernel-family candidates can be expressed as DSL-level planning choices without constructing a model."
+        )
     if prior_handoff.noise_and_uncertainty:
         supported.append("Simple scalar-noise assumptions map cleanly into the current DSL.")
     return _deduplicate(supported)
@@ -765,7 +824,10 @@ def _build_preprocessing_or_evaluation_concerns(prior_handoff: PriorKnowledgeHan
 def _build_extension_requirements(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
     requirements = []
     requirements.extend(prior_handoff.representability_likely_extension)
-    if any(term in " ".join(prior_handoff.constraints_and_invariants).lower() for term in ("monotonic", "bounded", "positive")):
+    if any(
+        term in " ".join(prior_handoff.constraints_and_invariants).lower()
+        for term in ("monotonic", "bounded", "positive")
+    ):
         requirements.append("Strict functional constraints likely need future validation or DSL extensions.")
     return _deduplicate(requirements)
 
@@ -784,11 +846,15 @@ def _build_validation_risks(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
 def _build_recovery_risks(prior_handoff: PriorKnowledgeHandoff) -> list[str]:
     risks = []
     if prior_handoff.feature_grouping_signals:
-        risks.append("Rich interaction structure can lead to over-complex initial plans that later need simplification.")
+        risks.append(
+            "Rich interaction structure can lead to over-complex initial plans that later need simplification."
+        )
     if prior_handoff.noise_and_uncertainty:
         risks.append("Unresolved noise stories can force fallback to simpler scalar-noise assumptions during recovery.")
     if prior_handoff.regimes_and_edge_cases:
-        risks.append("Sparse regimes may leave the eventual model vulnerable to brittle extrapolation and revision churn.")
+        risks.append(
+            "Sparse regimes may leave the eventual model vulnerable to brittle extrapolation and revision churn."
+        )
     return _deduplicate(risks)
 
 

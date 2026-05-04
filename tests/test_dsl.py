@@ -220,7 +220,10 @@ class TestGPSpec:
         spec = GPSpec(
             model_class=ModelClass.MODEL_LIST_GP,
             output_dim=2,
-            output_means={0: MeanSpec(mean_type=MeanFunctionType.CONSTANT), 1: MeanSpec(mean_type=MeanFunctionType.LINEAR)},
+            output_means={
+                0: MeanSpec(mean_type=MeanFunctionType.CONSTANT),
+                1: MeanSpec(mean_type=MeanFunctionType.LINEAR),
+            },
         )
         data = json.loads(spec.model_dump_json())
         assert data["output_means"]["0"]["mean_type"] == "Constant"

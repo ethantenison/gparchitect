@@ -118,7 +118,10 @@ def test_prompt_fixtures_preserve_expected_delegation_contract(
         assert "END GPARCHITECT PRIOR KNOWLEDGE HANDOFF" in prior_knowledge_body
 
     if "Architecture Focus" in prompt_fixture["expected_agents"]:
-        assert "If the user already provides a valid prior-knowledge handoff, skip Prior Knowledge and invoke Architecture Focus directly." in orchestrator_body
+        assert (
+            "If the user already provides a valid prior-knowledge handoff, skip Prior Knowledge and invoke Architecture Focus directly."
+            in orchestrator_body
+        )
         assert "BEGIN GPARCHITECT ARCHITECTURE HANDOFF" in architecture_focus_body
         assert "END GPARCHITECT ARCHITECTURE HANDOFF" in architecture_focus_body
 
