@@ -12,7 +12,8 @@ Inputs:
     None — this module defines data structures only.
 
 Outputs:
-    Pydantic model classes: GPSpec, KernelSpec, FeatureGroupSpec, PriorSpec, NoiseSpec,
+    Pydantic model classes: GPSpec, KernelSpec, LeafKernelSpec, CompositeKernelSpec,
+    ChangepointKernelSpec, KernelExpr, FeatureGroupSpec, PriorSpec, NoiseSpec,
     MeanSpec, ExecutionSpec, RecencyFilteringSpec, TimeVaryingSpec, InputWarpingSpec.
 
 Non-obvious design decisions:
@@ -47,8 +48,9 @@ What this module does NOT do:
 from __future__ import annotations
 
 from enum import Enum
+from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ModelClass(str, Enum):
@@ -369,6 +371,217 @@ class KernelSpec(BaseModel):
     time_varying: TimeVaryingSpec | None = None
 
 
+class LeafKernelSpec(BaseModel):
+    """A leaf (base) kernel node with no sub-kernels.
+
+    Attributes:
+        kind: Discriminator field, always "leaf".
+        kernel_type: The kernel family.
+        ard: Whether to use Automatic Relevance Determination.
+        lengthscale_prior: Optional prior on the lengthscale.
+        outputscale_prior: Optional prior on the outputscale.
+        period_prior: Optional prior on the period (Periodic kernel only).
+        period_length: Optional fixed initialization for the Periodic period.
+        rq_alpha: Optional fixed initialization for the RQ alpha parameter.
+        polynomial_power: Optional degree for the Polynomial kernel.
+        polynomial_offset: Optional fixed initialization for the Polynomial offset.
+        num_mixtures: Number of components for the Spectral Mixture kernel.
+        spectral_init: Initialization strategy for the Spectral Mixture kernel.
+        bnn_depth: Optional depth for the Infinite Width BNN kernel.
+        exponential_decay_power: Optional fixed initialization for ExponentialDecay power.
+        exponential_decay_offset: Optional fixed initialization for ExponentialDecay offset.
+        time_varying: Optional Tier 2 time-varying hyperparameter specification.
+    """
+
+    kind: Literal["leaf"] = "leaf"
+    kernel_type: KernelType
+    ard: bool = False
+    lengthscale_prior: PriorSpec | None = None
+    outputscale_prior: PriorSpec | None = None
+    period_prior: PriorSpec | None = None
+    period_length: float | None = None
+    rq_alpha: float | None = None
+    polynomial_power: int | None = None
+    polynomial_offset: float | None = None
+    num_mixtures: int | None = None
+    spectral_init: SpectralMixtureInitialization = SpectralMixtureInitialization.FROM_DATA
+    bnn_depth: int | None = None
+    exponential_decay_power: float | None = None
+    exponential_decay_offset: float | None = None
+    time_varying: TimeVaryingSpec | None = None
+
+
+class CompositeKernelSpec(BaseModel):
+    """An additive or multiplicative composition over child KernelExprs.
+
+    Attributes:
+        kind: Discriminator field, always "composite".
+        composition: Must be ADDITIVE or MULTIPLICATIVE.
+        children: Sub-kernels; must contain >= 2 items.
+        outputscale_prior: Optional prior on the outputscale (multiplicative only).
+        time_varying: Optional Tier 2 time-varying hyperparameter specification.
+    """
+
+    kind: Literal["composite"] = "composite"
+    composition: CompositionType
+    children: list[KernelExpr] = Field(default_factory=list)  # type: ignore[type-arg]
+    outputscale_prior: PriorSpec | None = None
+    time_varying: TimeVaryingSpec | None = None
+
+    @field_validator("composition")
+    @classmethod
+    def _validate_composition(cls, value: CompositionType) -> CompositionType:
+        if value not in {CompositionType.ADDITIVE, CompositionType.MULTIPLICATIVE}:
+            raise ValueError(
+                f"CompositeKernelSpec.composition must be ADDITIVE or MULTIPLICATIVE, got {value!r}."
+            )
+        return value
+
+    @field_validator("children")
+    @classmethod
+    def _validate_children(cls, value: list) -> list:  # type: ignore[type-arg]
+        if len(value) < 2:  # noqa: PLR2004
+            raise ValueError(
+                f"CompositeKernelSpec must have at least 2 children, got {len(value)}."
+            )
+        return value
+
+
+class ChangepointKernelSpec(BaseModel):
+    """A changepoint kernel transitioning between two child kernel regimes.
+
+    Attributes:
+        kind: Discriminator field, always "changepoint".
+        kernel_before: Kernel active before the changepoint.
+        kernel_after: Kernel active after the changepoint.
+        changepoint_location: Initial value for the changepoint location parameter.
+        changepoint_steepness: Initial steepness; controls sharpness of transition.
+        outputscale_prior: Optional prior on the outputscale.
+    """
+
+    kind: Literal["changepoint"] = "changepoint"
+    kernel_before: KernelExpr  # type: ignore[type-arg]
+    kernel_after: KernelExpr  # type: ignore[type-arg]
+    changepoint_location: float | None = None
+    changepoint_steepness: float | None = None
+    outputscale_prior: PriorSpec | None = None
+
+
+KernelExpr = Annotated[
+    Union[LeafKernelSpec, CompositeKernelSpec, ChangepointKernelSpec],
+    Field(discriminator="kind"),
+]
+
+# Resolve forward references in models with recursive KernelExpr fields.
+CompositeKernelSpec.model_rebuild()
+ChangepointKernelSpec.model_rebuild()
+
+
+def _kernel_spec_to_expr(spec: KernelSpec) -> KernelExpr:  # type: ignore[type-arg]
+    """Convert a legacy KernelSpec to the canonical KernelExpr discriminated union.
+
+    Args:
+        spec: A KernelSpec instance to normalize.
+
+    Returns:
+        A LeafKernelSpec, CompositeKernelSpec, or ChangepointKernelSpec.
+
+    Raises:
+        ValueError: If the spec has an ambiguous or invalid shape.
+    """
+    if spec.kernel_type == KernelType.CHANGEPOINT:
+        if len(spec.children) != 2:  # noqa: PLR2004
+            raise ValueError(
+                f"Changepoint KernelSpec must have exactly 2 children, got {len(spec.children)}."
+            )
+        return ChangepointKernelSpec(
+            kernel_before=_kernel_spec_to_expr(spec.children[0]),
+            kernel_after=_kernel_spec_to_expr(spec.children[1]),
+            changepoint_location=spec.changepoint_location,
+            changepoint_steepness=spec.changepoint_steepness,
+            outputscale_prior=spec.outputscale_prior,
+        )
+
+    if spec.children:
+        if spec.composition not in {CompositionType.ADDITIVE, CompositionType.MULTIPLICATIVE}:
+            raise ValueError(
+                f"KernelSpec with children must have ADDITIVE or MULTIPLICATIVE composition, "
+                f"got {spec.composition!r}."
+            )
+        return CompositeKernelSpec(
+            composition=spec.composition,
+            children=[_kernel_spec_to_expr(child) for child in spec.children],
+            outputscale_prior=spec.outputscale_prior,
+            time_varying=spec.time_varying,
+        )
+
+    return LeafKernelSpec(
+        kernel_type=spec.kernel_type,
+        ard=spec.ard,
+        lengthscale_prior=spec.lengthscale_prior,
+        outputscale_prior=spec.outputscale_prior,
+        period_prior=spec.period_prior,
+        period_length=spec.period_length,
+        rq_alpha=spec.rq_alpha,
+        polynomial_power=spec.polynomial_power,
+        polynomial_offset=spec.polynomial_offset,
+        num_mixtures=spec.num_mixtures,
+        spectral_init=spec.spectral_init,
+        bnn_depth=spec.bnn_depth,
+        exponential_decay_power=spec.exponential_decay_power,
+        exponential_decay_offset=spec.exponential_decay_offset,
+        time_varying=spec.time_varying,
+    )
+
+
+def _legacy_dict_to_kernel_expr(value: dict[str, Any]) -> dict[str, Any]:
+    """Add a 'kind' discriminator to a legacy KernelSpec-shaped dict.
+
+    Args:
+        value: A dict without 'kind', shaped like a KernelSpec.
+
+    Returns:
+        A dict with 'kind' inserted for Pydantic discriminated-union parsing.
+
+    Raises:
+        ValueError: If the shape is ambiguous (children present but composition=none).
+    """
+    children = value.get("children", [])
+    kernel_type = value.get("kernel_type", "")
+    composition = value.get("composition", "none")
+
+    if kernel_type == KernelType.CHANGEPOINT.value or kernel_type == "Changepoint":
+        raw_children = children
+        tagged_children: list[dict[str, Any]] = []
+        for child in raw_children:
+            if isinstance(child, dict) and "kind" not in child:
+                tagged_children.append(_legacy_dict_to_kernel_expr(child))
+            else:
+                tagged_children.append(child)
+        return {
+            **value,
+            "kind": "changepoint",
+            "kernel_before": tagged_children[0] if len(tagged_children) > 0 else value.get("kernel_before"),
+            "kernel_after": tagged_children[1] if len(tagged_children) > 1 else value.get("kernel_after"),
+        }
+
+    if children:
+        if composition not in {"additive", "multiplicative"}:
+            raise ValueError(
+                f"Legacy KernelSpec dict has children but composition={composition!r}; "
+                "cannot determine kind. Use ADDITIVE or MULTIPLICATIVE."
+            )
+        tagged: list[dict[str, Any]] = []
+        for child in children:
+            if isinstance(child, dict) and "kind" not in child:
+                tagged.append(_legacy_dict_to_kernel_expr(child))
+            else:
+                tagged.append(child)
+        return {**value, "kind": "composite", "children": tagged}
+
+    return {**value, "kind": "leaf"}
+
+
 class FeatureGroupSpec(BaseModel):
     """Specification for a group of input features sharing a common kernel.
 
@@ -380,7 +593,19 @@ class FeatureGroupSpec(BaseModel):
 
     name: str
     feature_indices: list[int] = Field(default_factory=list)
-    kernel: KernelSpec
+    kernel: KernelExpr  # type: ignore[type-arg]
+
+    @field_validator("kernel", mode="before")
+    @classmethod
+    def _normalize_legacy_kernel(cls, value: Any) -> Any:
+        """Normalize a legacy KernelSpec payload to the new KernelExpr discriminated union."""
+        if isinstance(value, (LeafKernelSpec, CompositeKernelSpec, ChangepointKernelSpec)):
+            return value
+        if isinstance(value, KernelSpec):
+            return _kernel_spec_to_expr(value)
+        if isinstance(value, dict) and "kind" not in value:
+            return _legacy_dict_to_kernel_expr(value)
+        return value
 
 
 class GPSpec(BaseModel):

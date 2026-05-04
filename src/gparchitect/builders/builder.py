@@ -42,10 +42,13 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 from gparchitect.dsl.schema import (
+    ChangepointKernelSpec,
+    CompositeKernelSpec,
     CompositionType,
     GPSpec,
-    KernelSpec,
+    KernelExpr,
     KernelType,
+    LeafKernelSpec,
     MeanFunctionType,
     MeanSpec,
     ModelClass,
@@ -90,25 +93,23 @@ def _build_gpytorch_prior(prior_spec: PriorSpec | None):  # noqa: ANN201
     raise ValueError(f"Unsupported prior distribution: {prior_spec.distribution}")
 
 
-def _build_gpytorch_kernel(kernel_spec: KernelSpec, num_features: int):  # noqa: ANN201
-    """Construct a GPyTorch kernel from a KernelSpec.
+def _build_gpytorch_kernel(kernel_spec: KernelExpr, num_features: int):  # noqa: ANN201
+    """Construct a GPyTorch kernel from a KernelExpr.
 
     Args:
-        kernel_spec: The kernel specification to build.
+        kernel_spec: The kernel expression to build.
         num_features: Number of input features this kernel acts on.
 
     Returns:
         A gpytorch.kernels.Kernel instance.
     """
-
     active_dims = tuple(range(num_features))
-    ard_num_dims = num_features if kernel_spec.ard else None
-
+    ard_num_dims = num_features if (kernel_spec.kind == "leaf" and kernel_spec.ard) else None
     return _build_gpytorch_kernel_with_active_dims(kernel_spec, active_dims, ard_num_dims)
 
 
 def _build_gpytorch_kernel_with_active_dims(
-    kernel_spec: KernelSpec,
+    kernel_spec: KernelExpr,
     active_dims: tuple[int, ...],
     ard_num_dims: int | None = None,
     *,
@@ -116,14 +117,148 @@ def _build_gpytorch_kernel_with_active_dims(
     train_X=None,  # noqa: ANN001
     train_Y=None,  # noqa: ANN001
 ):  # noqa: ANN201
-    """Construct a GPyTorch kernel from a KernelSpec and explicit active dimensions."""
+    """Construct a GPyTorch kernel from a KernelExpr and explicit active dimensions."""
+
+    outputscale_prior = _build_gpytorch_prior(kernel_spec.outputscale_prior)
+
+    if kernel_spec.kind == "changepoint":
+        return _build_changepoint_kernel(kernel_spec, active_dims, outputscale_prior, wrap_in_scale, train_X, train_Y)
+
+    if kernel_spec.kind == "composite":
+        return _build_composite_kernel(kernel_spec, active_dims, outputscale_prior, wrap_in_scale, train_X, train_Y)
+
+    # kernel_spec.kind == "leaf"
+    return _build_leaf_kernel(kernel_spec, active_dims, ard_num_dims, outputscale_prior, wrap_in_scale, train_X, train_Y)
+
+
+def _build_changepoint_kernel(
+    kernel_spec: ChangepointKernelSpec,
+    active_dims: tuple[int, ...],
+    outputscale_prior,  # noqa: ANN001
+    wrap_in_scale: bool,
+    train_X,  # noqa: ANN001
+    train_Y,  # noqa: ANN001
+):  # noqa: ANN201
+    """Build a changepoint kernel from a ChangepointKernelSpec."""
+    import gpytorch
+
+    from gparchitect.builders.changepoint_kernel import ChangepointKernel
+
+    k_before = _build_gpytorch_kernel_with_active_dims(
+        kernel_spec.kernel_before,
+        active_dims,
+        wrap_in_scale=False,
+        train_X=train_X,
+        train_Y=train_Y,
+    )
+    k_after = _build_gpytorch_kernel_with_active_dims(
+        kernel_spec.kernel_after,
+        active_dims,
+        wrap_in_scale=False,
+        train_X=train_X,
+        train_Y=train_Y,
+    )
+    location = kernel_spec.changepoint_location if kernel_spec.changepoint_location is not None else 0.5
+    steepness = kernel_spec.changepoint_steepness if kernel_spec.changepoint_steepness is not None else 1.0
+    base_kernel = ChangepointKernel(
+        kernel_before=k_before,
+        kernel_after=k_after,
+        changepoint_location=location,
+        changepoint_steepness=steepness,
+        active_dims=active_dims,
+    )
+    if wrap_in_scale:
+        return gpytorch.kernels.ScaleKernel(base_kernel, outputscale_prior=outputscale_prior)
+    return base_kernel
+
+
+def _build_composite_kernel(
+    kernel_spec: CompositeKernelSpec,
+    active_dims: tuple[int, ...],
+    outputscale_prior,  # noqa: ANN001
+    wrap_in_scale: bool,
+    train_X,  # noqa: ANN001
+    train_Y,  # noqa: ANN001
+):  # noqa: ANN201
+    """Build an additive or multiplicative composite kernel from a CompositeKernelSpec."""
+    import gpytorch
+
+    if kernel_spec.composition == CompositionType.ADDITIVE:
+        if outputscale_prior is not None:
+            raise ValueError("outputscale_prior is only supported on leaf kernels or multiplicative composites.")
+        child_kernels = [
+            _build_gpytorch_kernel_with_active_dims(
+                child,
+                active_dims,
+                train_X=train_X,
+                train_Y=train_Y,
+            )
+            for child in kernel_spec.children
+        ]
+        composed = gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
+        if kernel_spec.time_varying is not None:
+            from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
+
+            tv_spec = kernel_spec.time_varying
+            composed = build_time_varying_kernel(
+                base_kernel=composed,
+                time_feature_index=tv_spec.time_feature_index,
+                target=tv_spec.target.value,
+                outputscale_bias_limit=tv_spec.outputscale_bias_limit,
+                outputscale_slope_limit=tv_spec.outputscale_slope_limit,
+            )
+        return composed
+
+    # MULTIPLICATIVE
+    child_kernels = [
+        _build_gpytorch_kernel_with_active_dims(
+            child,
+            active_dims,
+            wrap_in_scale=False,
+            train_X=train_X,
+            train_Y=train_Y,
+        )
+        for child in kernel_spec.children
+    ]
+    composed = gpytorch.kernels.ProductKernel(*cast(list[Any], child_kernels))
+
+    if wrap_in_scale:
+        scaled: Any = gpytorch.kernels.ScaleKernel(composed, outputscale_prior=outputscale_prior)
+    else:
+        if outputscale_prior is not None:
+            raise ValueError("outputscale_prior requires an outer ScaleKernel.")
+        scaled = composed
+
+    if kernel_spec.time_varying is not None:
+        from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
+
+        tv_spec = kernel_spec.time_varying
+        scaled = build_time_varying_kernel(
+            base_kernel=scaled,
+            time_feature_index=tv_spec.time_feature_index,
+            target=tv_spec.target.value,
+            outputscale_bias_limit=tv_spec.outputscale_bias_limit,
+            outputscale_slope_limit=tv_spec.outputscale_slope_limit,
+        )
+    return scaled
+
+
+def _build_leaf_kernel(
+    kernel_spec: LeafKernelSpec,
+    active_dims: tuple[int, ...],
+    ard_num_dims: int | None,
+    outputscale_prior,  # noqa: ANN001
+    wrap_in_scale: bool,
+    train_X,  # noqa: ANN001
+    train_Y,  # noqa: ANN001
+):  # noqa: ANN201
+    """Build a leaf kernel from a LeafKernelSpec."""
     import gpytorch
     from botorch.models.kernels.exponential_decay import ExponentialDecayKernel
     from botorch.models.kernels.infinite_width_bnn import InfiniteWidthBNNKernel
 
     resolved_ard_num_dims = len(active_dims) if kernel_spec.ard else ard_num_dims
     lengthscale_prior = _build_gpytorch_prior(kernel_spec.lengthscale_prior)
-    outputscale_prior = _build_gpytorch_prior(kernel_spec.outputscale_prior)
     period_prior = _build_gpytorch_prior(kernel_spec.period_prior)
 
     if kernel_spec.kernel_type == KernelType.SPECTRAL_MIXTURE:
@@ -195,43 +330,6 @@ def _build_gpytorch_kernel_with_active_dims(
         KernelType.EXPONENTIAL_DECAY: lambda: ExponentialDecayKernel(active_dims=active_dims),
     }
 
-    # Changepoint kernel is handled separately because it requires two child kernels
-    # built recursively and passed to the ChangepointKernel constructor.
-    if kernel_spec.kernel_type == KernelType.CHANGEPOINT:
-        from gparchitect.builders.changepoint_kernel import ChangepointKernel
-
-        if len(kernel_spec.children) != 2:  # noqa: PLR2004
-            raise ValueError(
-                f"Changepoint kernel requires exactly 2 children (before/after kernels), "
-                f"got {len(kernel_spec.children)}."
-            )
-        k_before = _build_gpytorch_kernel_with_active_dims(
-            kernel_spec.children[0],
-            active_dims,
-            wrap_in_scale=False,
-            train_X=train_X,
-            train_Y=train_Y,
-        )
-        k_after = _build_gpytorch_kernel_with_active_dims(
-            kernel_spec.children[1],
-            active_dims,
-            wrap_in_scale=False,
-            train_X=train_X,
-            train_Y=train_Y,
-        )
-        location = kernel_spec.changepoint_location if kernel_spec.changepoint_location is not None else 0.5
-        steepness = kernel_spec.changepoint_steepness if kernel_spec.changepoint_steepness is not None else 1.0
-        base_kernel = ChangepointKernel(
-            kernel_before=k_before,
-            kernel_after=k_after,
-            changepoint_location=location,
-            changepoint_steepness=steepness,
-            active_dims=active_dims,
-        )
-        if wrap_in_scale:
-            return gpytorch.kernels.ScaleKernel(base_kernel, outputscale_prior=outputscale_prior)
-        return base_kernel
-
     if kernel_spec.kernel_type not in kernel_map:
         logger.warning("Unknown kernel type %s; falling back to Matern52.", kernel_spec.kernel_type)
         base_kernel = gpytorch.kernels.MaternKernel(
@@ -257,79 +355,12 @@ def _build_gpytorch_kernel_with_active_dims(
         if init_kwargs:
             base_kernel.initialize(**init_kwargs)
 
-    if kernel_spec.children:
-        if kernel_spec.composition == CompositionType.ADDITIVE:
-            if outputscale_prior is not None:
-                raise ValueError("outputscale_prior is only supported on leaf kernels or multiplicative composites.")
-            child_kernels = [
-                _build_gpytorch_kernel_with_active_dims(
-                    child,
-                    active_dims,
-                    train_X=train_X,
-                    train_Y=train_Y,
-                )
-                for child in kernel_spec.children
-            ]
-            composed = gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
-            if kernel_spec.time_varying is not None:
-                from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
-
-                tv_spec = kernel_spec.time_varying
-                composed = build_time_varying_kernel(
-                    base_kernel=composed,
-                    time_feature_index=tv_spec.time_feature_index,
-                    target=tv_spec.target.value,
-                    outputscale_bias_limit=tv_spec.outputscale_bias_limit,
-                    outputscale_slope_limit=tv_spec.outputscale_slope_limit,
-                )
-            return composed
-
-        child_kernels = [
-            _build_gpytorch_kernel_with_active_dims(
-                child,
-                active_dims,
-                wrap_in_scale=kernel_spec.composition != CompositionType.MULTIPLICATIVE,
-                train_X=train_X,
-                train_Y=train_Y,
-            )
-            for child in kernel_spec.children
-        ]
-        if kernel_spec.composition == CompositionType.MULTIPLICATIVE:
-            composed = gpytorch.kernels.ProductKernel(*cast(list[Any], child_kernels))
-        else:
-            composed = gpytorch.kernels.AdditiveKernel(*cast(list[Any], child_kernels))
-
-        if wrap_in_scale:
-            scaled: Any = gpytorch.kernels.ScaleKernel(composed, outputscale_prior=outputscale_prior)
-        else:
-            if outputscale_prior is not None:
-                raise ValueError("outputscale_prior requires an outer ScaleKernel.")
-            scaled = composed
-
-        if kernel_spec.time_varying is not None:
-            from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
-
-            tv_spec = kernel_spec.time_varying
-            scaled = build_time_varying_kernel(
-                base_kernel=scaled,
-                time_feature_index=tv_spec.time_feature_index,
-                target=tv_spec.target.value,
-                outputscale_bias_limit=tv_spec.outputscale_bias_limit,
-                outputscale_slope_limit=tv_spec.outputscale_slope_limit,
-            )
-
-        return scaled
-
     should_wrap = wrap_in_scale and kernel_spec.kernel_type != KernelType.SPECTRAL_MIXTURE
     if should_wrap:
         scaled = gpytorch.kernels.ScaleKernel(base_kernel, outputscale_prior=outputscale_prior)
     else:
         scaled = base_kernel
 
-    # Apply Tier 2 time-varying hyperparameter wrapper if requested.
-    # The wrapper is applied after the base kernel (and optional ScaleKernel) is built,
-    # so that the time-varying modulation acts on the full scaled kernel output or
-    # on the kernel's time input, depending on the target.
     if kernel_spec.time_varying is not None:
         from gparchitect.builders.time_varying_kernel import build_time_varying_kernel
 

@@ -34,9 +34,13 @@ import logging
 from dataclasses import dataclass, field
 
 from gparchitect.dsl.schema import (
+    ChangepointKernelSpec,
+    CompositeKernelSpec,
     CompositionType,
     GPSpec,
+    KernelExpr,
     KernelType,
+    LeafKernelSpec,
     ModelClass,
     PriorDistribution,
     PriorSpec,
@@ -182,16 +186,20 @@ def _check_feature_groups(spec: GPSpec, result: ValidationResult) -> None:
         )
 
 
-def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: ValidationResult) -> None:  # noqa: ANN001
-    """Recursively validate a KernelSpec."""
-    if kernel.kernel_type in _PERIODIC_ONLY_KERNELS:
-        # Periodic kernels require a single feature dimension
-        pass  # Not enforced at DSL level; handled by builder
+def _check_kernel_spec(group_name: str, kernel: KernelExpr, feature_count: int, result: ValidationResult) -> None:
+    """Recursively validate a KernelExpr discriminated-union node."""
+    if kernel.kind == "leaf":
+        _check_leaf_kernel_spec(group_name, kernel, feature_count, result)
+    elif kernel.kind == "composite":
+        _check_composite_kernel_spec(group_name, kernel, feature_count, result)
+    elif kernel.kind == "changepoint":
+        _check_changepoint_kernel_spec(group_name, kernel, feature_count, result)
 
-    if kernel.ard and not kernel.children:
-        # ARD on composed kernels is not directly supported at the top level
-        pass
 
+def _check_leaf_kernel_spec(
+    group_name: str, kernel: LeafKernelSpec, feature_count: int, result: ValidationResult
+) -> None:
+    """Validate a leaf kernel specification."""
     if kernel.kernel_type == KernelType.RQ and kernel.rq_alpha is not None and kernel.rq_alpha <= 0:
         result.errors.append(f"Feature group '{group_name}': RQ alpha must be > 0, got {kernel.rq_alpha}.")
 
@@ -213,13 +221,16 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
     if kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
         if kernel.num_mixtures is not None and kernel.num_mixtures < 1:
             result.errors.append(
-                f"Feature group '{group_name}': SpectralMixture num_mixtures must be >= 1, got {kernel.num_mixtures}."
+                f"Feature group '{group_name}': SpectralMixture num_mixtures must be >= 1, "
+                f"got {kernel.num_mixtures}."
             )
         if kernel.spectral_init not in {
             SpectralMixtureInitialization.FROM_DATA,
             SpectralMixtureInitialization.FROM_EMPIRICAL_SPECTRUM,
         }:
-            result.errors.append(f"Feature group '{group_name}': unsupported spectral_init '{kernel.spectral_init}'.")
+            result.errors.append(
+                f"Feature group '{group_name}': unsupported spectral_init '{kernel.spectral_init}'."
+            )
         if not kernel.ard:
             result.warnings.append(
                 f"Feature group '{group_name}': SpectralMixtureKernel requires ard_num_dims to match the "
@@ -249,47 +260,60 @@ def _check_kernel_spec(group_name: str, kernel, feature_count: int, result: Vali
                 f"got {kernel.exponential_decay_offset}."
             )
 
-    if kernel.kernel_type == KernelType.CHANGEPOINT:
-        if feature_count != 1:
-            result.errors.append(
-                f"Feature group '{group_name}': Changepoint kernel requires exactly one active feature "
-                f"(a time-like input), got {feature_count}."
-            )
-        if len(kernel.children) != 2:  # noqa: PLR2004
-            result.errors.append(
-                f"Feature group '{group_name}': Changepoint kernel requires exactly 2 children "
-                f"(before and after kernels), got {len(kernel.children)}."
-            )
-        if kernel.changepoint_steepness is not None and kernel.changepoint_steepness <= 0:
-            result.errors.append(
-                f"Feature group '{group_name}': Changepoint steepness must be > 0, got {kernel.changepoint_steepness}."
-            )
-
     if kernel.time_varying is not None:
-        tv = kernel.time_varying
-        if tv.parameterization != "linear":
-            result.errors.append(
-                f"Feature group '{group_name}': time_varying.parameterization must be 'linear', "
-                f"got '{tv.parameterization}'."
-            )
-        if tv.time_feature_index < 0:
-            result.errors.append(
-                f"Feature group '{group_name}': time_varying.time_feature_index must be >= 0, "
-                f"got {tv.time_feature_index}."
-            )
-        if tv.outputscale_bias_limit <= 0:
-            result.errors.append(
-                f"Feature group '{group_name}': time_varying.outputscale_bias_limit must be > 0, "
-                f"got {tv.outputscale_bias_limit}."
-            )
-        if tv.outputscale_slope_limit <= 0:
-            result.errors.append(
-                f"Feature group '{group_name}': time_varying.outputscale_slope_limit must be > 0, "
-                f"got {tv.outputscale_slope_limit}."
-            )
+        _check_time_varying(group_name, kernel.time_varying, result)
 
+
+def _check_composite_kernel_spec(
+    group_name: str, kernel: CompositeKernelSpec, feature_count: int, result: ValidationResult
+) -> None:
+    """Validate a composite (additive/multiplicative) kernel specification."""
+    if kernel.time_varying is not None:
+        _check_time_varying(group_name, kernel.time_varying, result)
     for child in kernel.children:
         _check_kernel_spec(group_name, child, feature_count, result)
+
+
+def _check_changepoint_kernel_spec(
+    group_name: str, kernel: ChangepointKernelSpec, feature_count: int, result: ValidationResult
+) -> None:
+    """Validate a changepoint kernel specification."""
+    if feature_count != 1:
+        result.errors.append(
+            f"Feature group '{group_name}': Changepoint kernel requires exactly one active feature "
+            f"(a time-like input), got {feature_count}."
+        )
+    if kernel.changepoint_steepness is not None and kernel.changepoint_steepness <= 0:
+        result.errors.append(
+            f"Feature group '{group_name}': Changepoint steepness must be > 0, "
+            f"got {kernel.changepoint_steepness}."
+        )
+    _check_kernel_spec(group_name, kernel.kernel_before, feature_count, result)
+    _check_kernel_spec(group_name, kernel.kernel_after, feature_count, result)
+
+
+def _check_time_varying(group_name: str, tv, result: ValidationResult) -> None:  # noqa: ANN001
+    """Validate a TimeVaryingSpec."""
+    if tv.parameterization != "linear":
+        result.errors.append(
+            f"Feature group '{group_name}': time_varying.parameterization must be 'linear', "
+            f"got '{tv.parameterization}'."
+        )
+    if tv.time_feature_index < 0:
+        result.errors.append(
+            f"Feature group '{group_name}': time_varying.time_feature_index must be >= 0, "
+            f"got {tv.time_feature_index}."
+        )
+    if tv.outputscale_bias_limit <= 0:
+        result.errors.append(
+            f"Feature group '{group_name}': time_varying.outputscale_bias_limit must be > 0, "
+            f"got {tv.outputscale_bias_limit}."
+        )
+    if tv.outputscale_slope_limit <= 0:
+        result.errors.append(
+            f"Feature group '{group_name}': time_varying.outputscale_slope_limit must be > 0, "
+            f"got {tv.outputscale_slope_limit}."
+        )
 
 
 def _check_model_class_consistency(spec: GPSpec, result: ValidationResult) -> None:
@@ -437,31 +461,44 @@ def _check_prior_spec(location: str, prior: PriorSpec, result: ValidationResult)
         )
 
 
-def _check_kernel_priors(group_name: str, kernel, result: ValidationResult) -> None:  # noqa: ANN001
-    if kernel.lengthscale_prior is not None:
-        _check_prior_spec(f"Feature group '{group_name}': lengthscale_prior", kernel.lengthscale_prior, result)
-        if kernel.children:
-            result.errors.append(f"Feature group '{group_name}': lengthscale_prior is only supported on leaf kernels.")
-        elif kernel.kernel_type not in _LENGTHSCALE_PRIOR_KERNELS:
-            result.errors.append(
-                f"Feature group '{group_name}': lengthscale_prior is not supported for {kernel.kernel_type.value}."
-            )
+def _check_kernel_priors(group_name: str, kernel: KernelExpr, result: ValidationResult) -> None:
+    """Recursively validate priors on a KernelExpr node."""
+    if kernel.kind == "leaf":
+        if kernel.lengthscale_prior is not None:
+            _check_prior_spec(f"Feature group '{group_name}': lengthscale_prior", kernel.lengthscale_prior, result)
+            if kernel.kernel_type not in _LENGTHSCALE_PRIOR_KERNELS:
+                result.errors.append(
+                    f"Feature group '{group_name}': lengthscale_prior is not supported "
+                    f"for {kernel.kernel_type.value}."
+                )
 
-    if kernel.outputscale_prior is not None:
-        _check_prior_spec(f"Feature group '{group_name}': outputscale_prior", kernel.outputscale_prior, result)
-        if kernel.children:
-            result.errors.append(f"Feature group '{group_name}': outputscale_prior is only supported on leaf kernels.")
-        elif kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
-            result.errors.append(
-                f"Feature group '{group_name}': outputscale_prior is not supported for SpectralMixture."
-            )
+        if kernel.outputscale_prior is not None:
+            _check_prior_spec(f"Feature group '{group_name}': outputscale_prior", kernel.outputscale_prior, result)
+            if kernel.kernel_type == KernelType.SPECTRAL_MIXTURE:
+                result.errors.append(
+                    f"Feature group '{group_name}': outputscale_prior is not supported for SpectralMixture."
+                )
 
-    if kernel.period_prior is not None:
-        _check_prior_spec(f"Feature group '{group_name}': period_prior", kernel.period_prior, result)
-        if kernel.children:
-            result.errors.append(f"Feature group '{group_name}': period_prior is only supported on leaf kernels.")
-        elif kernel.kernel_type != KernelType.PERIODIC:
-            result.errors.append(f"Feature group '{group_name}': period_prior is only supported for Periodic kernels.")
+        if kernel.period_prior is not None:
+            _check_prior_spec(f"Feature group '{group_name}': period_prior", kernel.period_prior, result)
+            if kernel.kernel_type != KernelType.PERIODIC:
+                result.errors.append(
+                    f"Feature group '{group_name}': period_prior is only supported for Periodic kernels."
+                )
 
-    for child in kernel.children:
-        _check_kernel_priors(group_name, child, result)
+    elif kernel.kind == "composite":
+        if kernel.outputscale_prior is not None:
+            _check_prior_spec(f"Feature group '{group_name}': outputscale_prior", kernel.outputscale_prior, result)
+            if kernel.composition == CompositionType.ADDITIVE:
+                result.errors.append(
+                    f"Feature group '{group_name}': outputscale_prior is not supported on ADDITIVE "
+                    "composite kernels (only on leaf or multiplicative composites)."
+                )
+        for child in kernel.children:
+            _check_kernel_priors(group_name, child, result)
+
+    elif kernel.kind == "changepoint":
+        if kernel.outputscale_prior is not None:
+            _check_prior_spec(f"Feature group '{group_name}': outputscale_prior", kernel.outputscale_prior, result)
+        _check_kernel_priors(group_name, kernel.kernel_before, result)
+        _check_kernel_priors(group_name, kernel.kernel_after, result)

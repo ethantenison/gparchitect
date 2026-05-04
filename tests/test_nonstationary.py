@@ -13,8 +13,10 @@ from __future__ import annotations
 import json
 
 import pytest
+from pydantic import ValidationError
 
 from gparchitect.dsl.schema import (
+    ChangepointKernelSpec,
     CompositionType,
     ExecutionSpec,
     FeatureGroupSpec,
@@ -22,6 +24,7 @@ from gparchitect.dsl.schema import (
     InputWarpingSpec,
     KernelSpec,
     KernelType,
+    LeafKernelSpec,
     ModelClass,
     NoiseSpec,
     RecencyFilteringMode,
@@ -41,14 +44,11 @@ def _make_changepoint_spec(input_dim: int = 1) -> GPSpec:
             FeatureGroupSpec(
                 name="time",
                 feature_indices=[0],
-                kernel=KernelSpec(
-                    kernel_type=KernelType.CHANGEPOINT,
+                kernel=ChangepointKernelSpec(
                     changepoint_location=0.5,
                     changepoint_steepness=1.0,
-                    children=[
-                        KernelSpec(kernel_type=KernelType.MATERN_52),
-                        KernelSpec(kernel_type=KernelType.RBF),
-                    ],
+                    kernel_before=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+                    kernel_after=LeafKernelSpec(kernel_type=KernelType.RBF),
                 ),
             )
         ],
@@ -134,18 +134,16 @@ class TestChangepointKernelDSL:
         assert KernelType.CHANGEPOINT.value == "Changepoint"
 
     def test_kernel_spec_accepts_changepoint_fields(self) -> None:
-        kernel = KernelSpec(
-            kernel_type=KernelType.CHANGEPOINT,
+        kernel = ChangepointKernelSpec(
             changepoint_location=0.3,
             changepoint_steepness=2.0,
-            children=[
-                KernelSpec(kernel_type=KernelType.MATERN_52),
-                KernelSpec(kernel_type=KernelType.RBF),
-            ],
+            kernel_before=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+            kernel_after=LeafKernelSpec(kernel_type=KernelType.RBF),
         )
         assert kernel.changepoint_location == pytest.approx(0.3)
         assert kernel.changepoint_steepness == pytest.approx(2.0)
-        assert len(kernel.children) == 2
+        assert kernel.kernel_before.kernel_type == KernelType.MATERN_52
+        assert kernel.kernel_after.kernel_type == KernelType.RBF
 
     def test_changepoint_fields_default_to_none(self) -> None:
         kernel = KernelSpec(kernel_type=KernelType.MATERN_52)
@@ -156,9 +154,10 @@ class TestChangepointKernelDSL:
         spec = _make_changepoint_spec()
         data = json.loads(spec.model_dump_json())
         kernel = data["feature_groups"][0]["kernel"]
-        assert kernel["kernel_type"] == "Changepoint"
+        assert kernel["kind"] == "changepoint"
         assert kernel["changepoint_location"] == pytest.approx(0.5)
-        assert len(kernel["children"]) == 2
+        assert kernel["kernel_before"]["kind"] == "leaf"
+        assert kernel["kernel_after"]["kind"] == "leaf"
 
 
 class TestRecencyFilteringDSL:
@@ -355,24 +354,17 @@ class TestChangepointValidation:
         assert any("Changepoint" in e and "one active feature" in e for e in result.errors)
 
     def test_changepoint_with_wrong_child_count_fails(self) -> None:
-        spec = GPSpec(
-            model_class=ModelClass.SINGLE_TASK_GP,
-            feature_groups=[
-                FeatureGroupSpec(
-                    name="time",
-                    feature_indices=[0],
-                    kernel=KernelSpec(
-                        kernel_type=KernelType.CHANGEPOINT,
-                        children=[KernelSpec(kernel_type=KernelType.MATERN_52)],  # only 1 child
-                    ),
-                )
-            ],
-            input_dim=1,
-            output_dim=1,
-        )
-        result = validate_dsl(spec)
-        assert not result.is_valid
-        assert any("Changepoint" in e and "2 children" in e for e in result.errors)
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError):
+            FeatureGroupSpec(
+                name="time",
+                feature_indices=[0],
+                kernel=ChangepointKernelSpec(
+                    kernel_before=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+                    kernel_after=None,  # type: ignore[arg-type]
+                ),
+            )
 
     def test_changepoint_negative_steepness_fails(self) -> None:
         spec = GPSpec(
@@ -935,19 +927,19 @@ class TestTranslatorChangepoint:
         from gparchitect.translator.translator import translate_to_dsl
 
         spec = translate_to_dsl("Use a changepoint kernel", input_dim=1)
-        assert spec.feature_groups[0].kernel.kernel_type == KernelType.CHANGEPOINT
+        assert isinstance(spec.feature_groups[0].kernel, ChangepointKernelSpec)
 
     def test_change_point_two_words_detected(self) -> None:
         from gparchitect.translator.translator import translate_to_dsl
 
         spec = translate_to_dsl("Use a change point kernel", input_dim=1)
-        assert spec.feature_groups[0].kernel.kernel_type == KernelType.CHANGEPOINT
+        assert isinstance(spec.feature_groups[0].kernel, ChangepointKernelSpec)
 
     def test_regime_shift_detected(self) -> None:
         from gparchitect.translator.translator import translate_to_dsl
 
         spec = translate_to_dsl("Model a regime shift at time 0.5", input_dim=1)
-        assert spec.feature_groups[0].kernel.kernel_type == KernelType.CHANGEPOINT
+        assert isinstance(spec.feature_groups[0].kernel, ChangepointKernelSpec)
 
     def test_changepoint_location_extracted(self) -> None:
         from gparchitect.translator.translator import translate_to_dsl
@@ -965,7 +957,10 @@ class TestTranslatorChangepoint:
         from gparchitect.translator.translator import translate_to_dsl
 
         spec = translate_to_dsl("Use a changepoint kernel", input_dim=1)
-        assert len(spec.feature_groups[0].kernel.children) == 2
+        kernel = spec.feature_groups[0].kernel
+        assert isinstance(kernel, ChangepointKernelSpec)
+        assert kernel.kernel_before is not None
+        assert kernel.kernel_after is not None
 
     def test_translated_changepoint_spec_is_valid(self) -> None:
         from gparchitect.translator.translator import translate_to_dsl
@@ -1287,33 +1282,22 @@ class TestChangepointBuilder:
         assert model is not None
 
     def test_changepoint_builder_wrong_children_raises(self) -> None:
-        try:
-            import torch
-        except ImportError:
-            pytest.skip("torch not installed")
-
-        from gparchitect.builders.builder import build_model_from_dsl
-
-        spec = GPSpec(
-            model_class=ModelClass.SINGLE_TASK_GP,
-            feature_groups=[
-                FeatureGroupSpec(
-                    name="time",
-                    feature_indices=[0],
-                    kernel=KernelSpec(
-                        kernel_type=KernelType.CHANGEPOINT,
-                        children=[KernelSpec(kernel_type=KernelType.MATERN_52)],  # only 1
-                    ),
-                )
-            ],
-            input_dim=1,
-            output_dim=1,
-        )
-        train_X = torch.ones(5, 1, dtype=torch.double)
-        train_Y = torch.ones(5, 1, dtype=torch.double)
-
-        with pytest.raises((ValueError, Exception)):
-            build_model_from_dsl(spec, train_X, train_Y)
+        with pytest.raises((ValueError, Exception, ValidationError)):
+            GPSpec(
+                model_class=ModelClass.SINGLE_TASK_GP,
+                feature_groups=[
+                    FeatureGroupSpec(
+                        name="time",
+                        feature_indices=[0],
+                        kernel=ChangepointKernelSpec(
+                            kernel_before=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+                            kernel_after=None,  # type: ignore[arg-type]
+                        ),
+                    )
+                ],
+                input_dim=1,
+                output_dim=1,
+            )
 
 
 # ---------------------------------------------------------------------------

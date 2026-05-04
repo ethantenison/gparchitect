@@ -6,13 +6,18 @@ import json
 
 import pytest
 
+from gparchitect.dsl.compat import normalize_kernel_spec
 from gparchitect.dsl.schema import (
+    ChangepointKernelSpec,
+    CompositeKernelSpec,
     CompositionType,
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
+    KernelExpr,  # noqa: F401
     KernelSpec,
     KernelType,
+    LeafKernelSpec,
     MeanFunctionType,
     MeanSpec,
     ModelClass,
@@ -254,3 +259,158 @@ class TestGPSpec:
         assert KernelType.MATERN_52.value == "Matern52"
         assert CompositionType.ADDITIVE.value == "additive"
         assert CompositionType.HIERARCHICAL.value == "hierarchical"
+
+
+class TestLeafKernelSpec:
+    def test_default_kind_is_leaf(self) -> None:
+        kernel = LeafKernelSpec(kernel_type=KernelType.MATERN_52)
+        assert kernel.kind == "leaf"
+
+    def test_json_round_trip(self) -> None:
+        kernel = LeafKernelSpec(
+            kernel_type=KernelType.RBF,
+            ard=True,
+            rq_alpha=None,
+        )
+        data = json.loads(kernel.model_dump_json())
+        assert data["kind"] == "leaf"
+        assert data["kernel_type"] == "RBF"
+        assert data["ard"] is True
+
+
+class TestCompositeKernelSpec:
+    def test_default_kind_is_composite(self) -> None:
+        kernel = CompositeKernelSpec(
+            composition=CompositionType.ADDITIVE,
+            children=[
+                LeafKernelSpec(kernel_type=KernelType.RBF),
+                LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+            ],
+        )
+        assert kernel.kind == "composite"
+
+    def test_json_round_trip(self) -> None:
+        kernel = CompositeKernelSpec(
+            composition=CompositionType.ADDITIVE,
+            children=[
+                LeafKernelSpec(kernel_type=KernelType.RBF),
+                LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+            ],
+        )
+        data = json.loads(kernel.model_dump_json())
+        assert data["kind"] == "composite"
+        assert data["composition"] == "additive"
+        assert len(data["children"]) == 2
+        assert data["children"][0]["kind"] == "leaf"
+
+    def test_invalid_composition_raises(self) -> None:
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            CompositeKernelSpec(
+                composition=CompositionType.NONE,
+                children=[
+                    LeafKernelSpec(kernel_type=KernelType.RBF),
+                    LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+                ],
+            )
+
+    def test_fewer_than_two_children_raises(self) -> None:
+        from pydantic import ValidationError
+        with pytest.raises(ValidationError):
+            CompositeKernelSpec(
+                composition=CompositionType.ADDITIVE,
+                children=[LeafKernelSpec(kernel_type=KernelType.RBF)],
+            )
+
+
+class TestChangepointKernelSpec:
+    def test_default_kind_is_changepoint(self) -> None:
+        kernel = ChangepointKernelSpec(
+            kernel_before=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+            kernel_after=LeafKernelSpec(kernel_type=KernelType.RBF),
+        )
+        assert kernel.kind == "changepoint"
+
+    def test_json_round_trip(self) -> None:
+        kernel = ChangepointKernelSpec(
+            kernel_before=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+            kernel_after=LeafKernelSpec(kernel_type=KernelType.RBF),
+            changepoint_location=0.5,
+            changepoint_steepness=2.0,
+        )
+        data = json.loads(kernel.model_dump_json())
+        assert data["kind"] == "changepoint"
+        assert data["kernel_before"]["kind"] == "leaf"
+        assert data["kernel_before"]["kernel_type"] == "Matern52"
+        assert data["kernel_after"]["kind"] == "leaf"
+        assert data["changepoint_location"] == pytest.approx(0.5)
+
+
+class TestNormalizeKernelSpec:
+    def test_leaf_kernel_normalizes_to_leaf_spec(self) -> None:
+        old = KernelSpec(kernel_type=KernelType.MATERN_52, ard=True)
+        result = normalize_kernel_spec(old)
+        assert isinstance(result, LeafKernelSpec)
+        assert result.kernel_type == KernelType.MATERN_52
+        assert result.ard is True
+
+    def test_additive_composite_normalizes(self) -> None:
+        old = KernelSpec(
+            kernel_type=KernelType.RBF,
+            composition=CompositionType.ADDITIVE,
+            children=[
+                KernelSpec(kernel_type=KernelType.RBF),
+                KernelSpec(kernel_type=KernelType.MATERN_52),
+            ],
+        )
+        result = normalize_kernel_spec(old)
+        assert isinstance(result, CompositeKernelSpec)
+        assert result.composition == CompositionType.ADDITIVE
+        assert len(result.children) == 2
+
+    def test_changepoint_normalizes(self) -> None:
+        old = KernelSpec(
+            kernel_type=KernelType.CHANGEPOINT,
+            children=[
+                KernelSpec(kernel_type=KernelType.MATERN_52),
+                KernelSpec(kernel_type=KernelType.RBF),
+            ],
+            changepoint_location=0.5,
+        )
+        result = normalize_kernel_spec(old)
+        assert isinstance(result, ChangepointKernelSpec)
+        assert isinstance(result.kernel_before, LeafKernelSpec)
+        assert isinstance(result.kernel_after, LeafKernelSpec)
+        assert result.changepoint_location == pytest.approx(0.5)
+
+    def test_ambiguous_children_with_none_composition_raises(self) -> None:
+        old = KernelSpec(
+            kernel_type=KernelType.RBF,
+            composition=CompositionType.NONE,
+            children=[
+                KernelSpec(kernel_type=KernelType.RBF),
+                KernelSpec(kernel_type=KernelType.MATERN_52),
+            ],
+        )
+        with pytest.raises(ValueError, match="ADDITIVE or MULTIPLICATIVE"):
+            normalize_kernel_spec(old)
+
+
+class TestFeatureGroupKernelNormalization:
+    def test_legacy_kernel_spec_normalized_to_leaf(self) -> None:
+        group = FeatureGroupSpec(
+            name="test",
+            feature_indices=[0],
+            kernel=KernelSpec(kernel_type=KernelType.RBF, ard=True),
+        )
+        assert isinstance(group.kernel, LeafKernelSpec)
+        assert group.kernel.kernel_type == KernelType.RBF
+        assert group.kernel.ard is True
+
+    def test_new_leaf_kernel_spec_accepted(self) -> None:
+        group = FeatureGroupSpec(
+            name="test",
+            feature_indices=[0],
+            kernel=LeafKernelSpec(kernel_type=KernelType.MATERN_52),
+        )
+        assert isinstance(group.kernel, LeafKernelSpec)
