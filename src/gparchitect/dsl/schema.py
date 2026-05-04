@@ -561,6 +561,7 @@ def _legacy_dict_to_kernel_expr(value: dict[str, Any]) -> dict[str, Any]:
         return {
             **value,
             "kind": "changepoint",
+            # Support both legacy `children` list format and explicit kernel_before/kernel_after fields.
             "kernel_before": tagged_children[0] if len(tagged_children) > 0 else value.get("kernel_before"),
             "kernel_after": tagged_children[1] if len(tagged_children) > 1 else value.get("kernel_after"),
         }

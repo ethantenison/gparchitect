@@ -679,6 +679,7 @@ def _apply_detected_priors(
                 elif target == "period":
                     kernel_spec.period_prior = prior
             elif target == "outputscale":
+                # ChangepointKernelSpec also has outputscale_prior for the outer ScaleKernel.
                 kernel_spec.outputscale_prior = prior
 
 

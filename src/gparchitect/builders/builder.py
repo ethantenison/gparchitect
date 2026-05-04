@@ -185,7 +185,10 @@ def _build_composite_kernel(
 
     if kernel_spec.composition == CompositionType.ADDITIVE:
         if outputscale_prior is not None:
-            raise ValueError("outputscale_prior is only supported on leaf kernels or multiplicative composites.")
+            raise ValueError(
+                "outputscale_prior is not supported on ADDITIVE composite kernels. "
+                "Use outputscale_prior only on leaf kernels or MULTIPLICATIVE composites."
+            )
         child_kernels = [
             _build_gpytorch_kernel_with_active_dims(
                 child,
@@ -226,7 +229,9 @@ def _build_composite_kernel(
         scaled: Any = gpytorch.kernels.ScaleKernel(composed, outputscale_prior=outputscale_prior)
     else:
         if outputscale_prior is not None:
-            raise ValueError("outputscale_prior requires an outer ScaleKernel.")
+            # wrap_in_scale=False means this composite is a child of another ScaleKernel;
+            # the prior must be set on the outer kernel instead.
+            raise ValueError("outputscale_prior requires an outer ScaleKernel (wrap_in_scale=True).")
         scaled = composed
 
     if kernel_spec.time_varying is not None:
