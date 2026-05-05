@@ -10,12 +10,14 @@ from __future__ import annotations
 import pytest
 
 from gparchitect.dsl.schema import (
+    CompositeKernelSpec,
     CompositionType,
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
     KernelType,
+    LeafKernelSpec,
     MeanFunctionType,
     MeanSpec,
     ModelClass,
@@ -91,7 +93,7 @@ class TestCovarianceBuilder:
 
         from gparchitect.builders.builder import _build_gpytorch_kernel
 
-        kernel_spec = KernelSpec(kernel_type=KernelType.RQ, ard=True, rq_alpha=0.75)
+        kernel_spec = LeafKernelSpec(kernel_type=KernelType.RQ, ard=True, rq_alpha=0.75)
         kernel = _build_gpytorch_kernel(kernel_spec, num_features=2)
 
         assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
@@ -185,7 +187,7 @@ class TestCovarianceBuilder:
 
         from gparchitect.builders.builder import _build_gpytorch_kernel
 
-        kernel_spec = KernelSpec(
+        kernel_spec = LeafKernelSpec(
             kernel_type=KernelType.POLYNOMIAL,
             polynomial_power=3,
             polynomial_offset=1.5,
@@ -206,7 +208,7 @@ class TestCovarianceBuilder:
 
         from gparchitect.builders.builder import _build_gpytorch_kernel
 
-        kernel_spec = KernelSpec(kernel_type=KernelType.INFINITE_WIDTH_BNN, bnn_depth=5)
+        kernel_spec = LeafKernelSpec(kernel_type=KernelType.INFINITE_WIDTH_BNN, bnn_depth=5)
         kernel = _build_gpytorch_kernel(kernel_spec, num_features=3)
 
         assert isinstance(kernel, gpytorch.kernels.ScaleKernel)
@@ -222,7 +224,7 @@ class TestCovarianceBuilder:
 
         from gparchitect.builders.builder import _build_gpytorch_kernel
 
-        kernel_spec = KernelSpec(
+        kernel_spec = LeafKernelSpec(
             kernel_type=KernelType.EXPONENTIAL_DECAY,
             exponential_decay_power=2.5,
             exponential_decay_offset=0.3,
@@ -365,12 +367,11 @@ class TestCovarianceBuilder:
 
         from gparchitect.builders.builder import _build_gpytorch_kernel
 
-        kernel_spec = KernelSpec(
-            kernel_type=KernelType.RBF,
+        kernel_spec = CompositeKernelSpec(
             composition=CompositionType.MULTIPLICATIVE,
             children=[
-                KernelSpec(kernel_type=KernelType.RBF),
-                KernelSpec(kernel_type=KernelType.MATERN_12),
+                LeafKernelSpec(kernel_type=KernelType.RBF),
+                LeafKernelSpec(kernel_type=KernelType.MATERN_12),
             ],
         )
 
@@ -388,12 +389,11 @@ class TestCovarianceBuilder:
 
         from gparchitect.builders.builder import _build_gpytorch_kernel
 
-        kernel_spec = KernelSpec(
-            kernel_type=KernelType.RBF,
+        kernel_spec = CompositeKernelSpec(
             composition=CompositionType.ADDITIVE,
             children=[
-                KernelSpec(kernel_type=KernelType.RBF),
-                KernelSpec(kernel_type=KernelType.MATERN_12),
+                LeafKernelSpec(kernel_type=KernelType.RBF),
+                LeafKernelSpec(kernel_type=KernelType.MATERN_12),
             ],
         )
 
@@ -410,20 +410,18 @@ class TestCovarianceBuilder:
 
         from gparchitect.builders.builder import _build_gpytorch_kernel
 
-        additive_factor = KernelSpec(
-            kernel_type=KernelType.RBF,
+        additive_factor = CompositeKernelSpec(
             composition=CompositionType.ADDITIVE,
             children=[
-                KernelSpec(kernel_type=KernelType.RBF),
-                KernelSpec(kernel_type=KernelType.LINEAR),
+                LeafKernelSpec(kernel_type=KernelType.RBF),
+                LeafKernelSpec(kernel_type=KernelType.LINEAR),
             ],
         )
-        kernel_spec = KernelSpec(
-            kernel_type=KernelType.RBF,
+        kernel_spec = CompositeKernelSpec(
             composition=CompositionType.MULTIPLICATIVE,
             children=[
                 additive_factor,
-                KernelSpec(kernel_type=KernelType.MATERN_12),
+                LeafKernelSpec(kernel_type=KernelType.MATERN_12),
             ],
         )
 
@@ -520,7 +518,7 @@ class TestBuildModelMocked:
         from gparchitect.builders.builder import build_model_from_dsl
 
         spec = _make_continuous_spec(input_dim=2)
-        spec.feature_groups[0].kernel = KernelSpec(
+        spec.feature_groups[0].kernel = LeafKernelSpec(
             kernel_type=KernelType.PERIODIC,
             ard=True,
             lengthscale_prior=PriorSpec(distribution=PriorDistribution.NORMAL, params={"loc": 0.0, "scale": 1.0}),
@@ -553,7 +551,7 @@ class TestBuildModelMocked:
         from gparchitect.builders.builder import build_model_from_dsl
 
         spec = _make_continuous_spec(input_dim=2)
-        spec.feature_groups[0].kernel = KernelSpec(
+        spec.feature_groups[0].kernel = LeafKernelSpec(
             kernel_type=KernelType.PERIODIC,
             ard=True,
             lengthscale_prior=PriorSpec(distribution=PriorDistribution.HALF_CAUCHY, params={"scale": 0.75}),

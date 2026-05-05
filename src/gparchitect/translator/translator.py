@@ -37,13 +37,14 @@ import logging
 import re
 
 from gparchitect.dsl.schema import (
+    ChangepointKernelSpec,
     CompositionType,
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     InputWarpingSpec,
-    KernelSpec,
     KernelType,
+    LeafKernelSpec,
     MeanFunctionType,
     MeanSpec,
     ModelClass,
@@ -520,8 +521,8 @@ def _build_changepoint_kernel_spec(
     instruction: str,
     *,
     ard_instruction: str | None = None,
-) -> KernelSpec:
-    """Build a Changepoint KernelSpec with two default sub-kernels.
+) -> ChangepointKernelSpec:
+    """Build a Changepoint kernel spec with two default sub-kernels.
 
     The translator generates a Matern52 before-kernel and an RBF after-kernel
     as a neutral default.  Users can customise by specifying 'before' and 'after'
@@ -532,25 +533,25 @@ def _build_changepoint_kernel_spec(
         ard_instruction: Source text used to determine ARD for child kernels.
 
     Returns:
-        A KernelSpec with kernel_type=CHANGEPOINT and 2 children.
+        A ChangepointKernelSpec with Matern52/RBF defaults.
     """
     location = _extract_changepoint_location(instruction)
     steepness = _extract_changepoint_steepness(instruction)
 
     child_ard_source = ard_instruction if ard_instruction is not None else instruction
-    before_kernel = KernelSpec(
+    before_kernel = LeafKernelSpec(
         kernel_type=KernelType.MATERN_52,
         ard=_resolve_ard_setting(child_ard_source, KernelType.MATERN_52),
     )
-    after_kernel = KernelSpec(
+    after_kernel = LeafKernelSpec(
         kernel_type=KernelType.RBF,
         ard=_resolve_ard_setting(child_ard_source, KernelType.RBF),
     )
-    return KernelSpec(
-        kernel_type=KernelType.CHANGEPOINT,
+    return ChangepointKernelSpec(
+        kernel_before=before_kernel,
+        kernel_after=after_kernel,
         changepoint_location=location,
         changepoint_steepness=steepness,
-        children=[before_kernel, after_kernel],
     )
 
 
@@ -559,32 +560,32 @@ def _build_kernel_spec(
     kernel_type: KernelType,
     *,
     ard_instruction: str | None = None,
-) -> KernelSpec:
+) -> LeafKernelSpec | ChangepointKernelSpec:
     """Build a kernel spec with any kernel-specific parameters parsed from text."""
     if kernel_type == KernelType.CHANGEPOINT:
         return _build_changepoint_kernel_spec(instruction, ard_instruction=ard_instruction)
 
     ard_source = instruction if ard_instruction is None else ard_instruction
     ard = True if kernel_type == KernelType.SPECTRAL_MIXTURE else _resolve_ard_setting(ard_source, kernel_type)
-    kernel_spec = KernelSpec(kernel_type=kernel_type, ard=ard)
+    leaf = LeafKernelSpec(kernel_type=kernel_type, ard=ard)
 
     if kernel_type == KernelType.RQ:
-        kernel_spec.rq_alpha = _extract_rq_alpha(instruction)
+        leaf.rq_alpha = _extract_rq_alpha(instruction)
     elif kernel_type == KernelType.PERIODIC:
-        kernel_spec.period_length = _extract_period_length(instruction)
+        leaf.period_length = _extract_period_length(instruction)
     elif kernel_type == KernelType.POLYNOMIAL:
-        kernel_spec.polynomial_power = _extract_polynomial_power(instruction)
-        kernel_spec.polynomial_offset = _extract_offset(instruction)
+        leaf.polynomial_power = _extract_polynomial_power(instruction)
+        leaf.polynomial_offset = _extract_offset(instruction)
     elif kernel_type == KernelType.SPECTRAL_MIXTURE:
-        kernel_spec.num_mixtures = _extract_num_mixtures(instruction)
-        kernel_spec.spectral_init = _detect_spectral_init(instruction)
+        leaf.num_mixtures = _extract_num_mixtures(instruction)
+        leaf.spectral_init = _detect_spectral_init(instruction)
     elif kernel_type == KernelType.INFINITE_WIDTH_BNN:
-        kernel_spec.bnn_depth = _extract_depth(instruction)
+        leaf.bnn_depth = _extract_depth(instruction)
     elif kernel_type == KernelType.EXPONENTIAL_DECAY:
-        kernel_spec.exponential_decay_power = _extract_power(instruction)
-        kernel_spec.exponential_decay_offset = _extract_offset(instruction)
+        leaf.exponential_decay_power = _extract_power(instruction)
+        leaf.exponential_decay_offset = _extract_offset(instruction)
 
-    return kernel_spec
+    return leaf
 
 
 def _match_kernel_type(instruction: str) -> KernelType | None:
@@ -656,7 +657,9 @@ def _normalize_prior_target(raw_target: str) -> str:
     return _PRIOR_TARGET_ALIASES[raw_target.lower()]
 
 
-def _apply_detected_priors(instruction: str, kernel_spec: KernelSpec, noise: NoiseSpec) -> None:
+def _apply_detected_priors(
+    instruction: str, kernel_spec: LeafKernelSpec | ChangepointKernelSpec, noise: NoiseSpec
+) -> None:
     """Apply parsed prior phrases to a kernel or noise spec in place."""
     for pattern in _PRIOR_PATTERNS:
         for match in pattern.finditer(instruction):
@@ -666,14 +669,19 @@ def _apply_detected_priors(instruction: str, kernel_spec: KernelSpec, noise: Noi
                 params=_parse_prior_params(distribution, match.group("params")),
             )
             target = _normalize_prior_target(match.group("target"))
-            if target == "lengthscale":
-                kernel_spec.lengthscale_prior = prior
-            elif target == "outputscale":
-                kernel_spec.outputscale_prior = prior
-            elif target == "period":
-                kernel_spec.period_prior = prior
-            elif target == "noise":
+            if target == "noise":
                 noise.prior = prior
+            elif isinstance(kernel_spec, LeafKernelSpec):
+                if target == "lengthscale":
+                    kernel_spec.lengthscale_prior = prior
+                elif target == "outputscale":
+                    kernel_spec.outputscale_prior = prior
+                elif target == "period":
+                    kernel_spec.period_prior = prior
+            elif target == "outputscale" and hasattr(kernel_spec, "outputscale_prior"):
+                # CompositeKernelSpec and ChangepointKernelSpec both have outputscale_prior
+                # for the outer ScaleKernel wrapper.
+                kernel_spec.outputscale_prior = prior
 
 
 def _default_execution_spec(model_class: ModelClass) -> ExecutionSpec:
@@ -875,7 +883,7 @@ def translate_to_dsl(
     input_warping = _detect_input_warping(instruction, input_dim, input_feature_names)
 
     # Apply time-varying modulation to the default kernel spec if detected.
-    if time_varying_result is not None:
+    if time_varying_result is not None and isinstance(default_kernel_spec, LeafKernelSpec):
         tv_target, tv_time_index = time_varying_result
         default_kernel_spec.time_varying = TimeVaryingSpec(
             target=tv_target,
@@ -889,9 +897,14 @@ def translate_to_dsl(
         if composition is None:
             composition = CompositionType.HIERARCHICAL if len(feature_groups) > 1 else CompositionType.ADDITIVE
         for group in feature_groups:
-            _apply_detected_priors(instruction, group.kernel, noise)
-            # Propagate time-varying to per-group kernels as well, if detected.
-            if time_varying_result is not None and group.kernel.time_varying is None:
+            if isinstance(group.kernel, (LeafKernelSpec, ChangepointKernelSpec)):
+                _apply_detected_priors(instruction, group.kernel, noise)
+            # Propagate time-varying to per-group leaf kernels, if detected.
+            if (
+                time_varying_result is not None
+                and isinstance(group.kernel, LeafKernelSpec)
+                and group.kernel.time_varying is None
+            ):
                 tv_target, tv_time_index = time_varying_result
                 group.kernel.time_varying = TimeVaryingSpec(
                     target=tv_target,

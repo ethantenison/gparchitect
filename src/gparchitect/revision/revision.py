@@ -44,8 +44,9 @@ from gparchitect.dsl.schema import (
     CompositionType,
     FeatureGroupSpec,
     GPSpec,
-    KernelSpec,
+    KernelExpr,
     KernelType,
+    LeafKernelSpec,
     ModelClass,
     NoiseSpec,
 )
@@ -169,26 +170,32 @@ def _disable_ard(spec: GPSpec, error_message: str) -> str:
     """Disable ARD on all feature group kernels."""
     changed = False
     for group in spec.feature_groups:
-        if group.kernel.ard:
-            group.kernel.ard = False
+        if _disable_ard_kernel(group.kernel):
             changed = True
-        for child in group.kernel.children:
-            if child.ard:
-                child.ard = False
-                changed = True
 
     if changed:
         return f"Disabled ARD on all kernels to reduce hyperparameter count. Error was: {error_message[:120]}"
     return f"ARD was already disabled; no change made. Error was: {error_message[:120]}"
 
 
+def _disable_ard_kernel(kernel: KernelExpr) -> bool:
+    """Recursively disable ARD on a KernelExpr. Returns True if any change was made."""
+    if kernel.kind == "leaf":
+        if kernel.ard:
+            kernel.ard = False
+            return True
+        return False
+    if kernel.kind == "composite":
+        return any(_disable_ard_kernel(child) for child in kernel.children)
+    # changepoint
+    changed = _disable_ard_kernel(kernel.kernel_before)
+    changed |= _disable_ard_kernel(kernel.kernel_after)
+    return changed
+
+
 def _simplify_kernels(spec: GPSpec, error_message: str) -> str:
     """Replace all kernels with a simple Matern52, removing compositions."""
-    num_features = spec.input_dim
-    if spec.task_feature_index is not None:
-        num_features -= 1
-
-    simple_kernel = KernelSpec(kernel_type=KernelType.MATERN_52, ard=False)
+    simple_kernel = LeafKernelSpec(kernel_type=KernelType.MATERN_52, ard=False)
     continuous_indices = [idx for idx in range(spec.input_dim) if idx != spec.task_feature_index]
 
     spec.feature_groups = [
@@ -205,15 +212,23 @@ def _simplify_kernels(spec: GPSpec, error_message: str) -> str:
 def _remove_priors(spec: GPSpec, error_message: str) -> str:
     """Remove all priors from kernels and noise."""
     for group in spec.feature_groups:
-        group.kernel.lengthscale_prior = None
-        group.kernel.outputscale_prior = None
-        group.kernel.period_prior = None
-        for child in group.kernel.children:
-            child.lengthscale_prior = None
-            child.outputscale_prior = None
-            child.period_prior = None
+        _remove_priors_kernel(group.kernel)
     spec.noise.prior = None
     return f"Removed all priors from kernels and noise. Error was: {error_message[:120]}"
+
+
+def _remove_priors_kernel(kernel: KernelExpr) -> None:
+    """Recursively remove all priors from a KernelExpr."""
+    kernel.outputscale_prior = None
+    if kernel.kind == "leaf":
+        kernel.lengthscale_prior = None
+        kernel.period_prior = None
+    elif kernel.kind == "composite":
+        for child in kernel.children:
+            _remove_priors_kernel(child)
+    elif kernel.kind == "changepoint":
+        _remove_priors_kernel(kernel.kernel_before)
+        _remove_priors_kernel(kernel.kernel_after)
 
 
 def _switch_to_single_task(spec: GPSpec, error_message: str) -> str:
@@ -230,7 +245,7 @@ def _switch_to_single_task(spec: GPSpec, error_message: str) -> str:
         FeatureGroupSpec(
             name="all_features",
             feature_indices=continuous_indices,
-            kernel=KernelSpec(kernel_type=KernelType.MATERN_52, ard=False),
+            kernel=LeafKernelSpec(kernel_type=KernelType.MATERN_52, ard=False),
         )
     ]
     return f"Switched to SingleTaskGP with Matern52 kernel. Error was: {error_message[:120]}"

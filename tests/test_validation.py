@@ -6,12 +6,14 @@ import pytest
 from pydantic import ValidationError
 
 from gparchitect.dsl.schema import (
+    CompositeKernelSpec,
     CompositionType,
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
     KernelSpec,
     KernelType,
+    LeafKernelSpec,
     MeanFunctionType,
     MeanSpec,
     ModelClass,
@@ -422,10 +424,9 @@ class TestValidatePriors:
 
     def test_outputscale_prior_rejects_composed_kernel(self) -> None:
         spec = _make_simple_spec(input_dim=1)
-        spec.feature_groups[0].kernel = KernelSpec(
-            kernel_type=KernelType.RBF,
+        spec.feature_groups[0].kernel = CompositeKernelSpec(
             composition=CompositionType.ADDITIVE,
-            children=[KernelSpec(kernel_type=KernelType.RBF)],
+            children=[LeafKernelSpec(kernel_type=KernelType.RBF), LeafKernelSpec(kernel_type=KernelType.MATERN_52)],
             outputscale_prior=PriorSpec(
                 distribution=PriorDistribution.GAMMA,
                 params={"concentration": 2.0, "rate": 0.5},
@@ -464,28 +465,28 @@ class TestValidateComposition:
 class TestValidateKernelParameterConstraints:
     def test_invalid_polynomial_power_fails(self) -> None:
         spec = _make_simple_spec()
-        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.POLYNOMIAL, polynomial_power=0)
+        spec.feature_groups[0].kernel = LeafKernelSpec(kernel_type=KernelType.POLYNOMIAL, polynomial_power=0)
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("Polynomial power" in error for error in result.errors)
 
     def test_invalid_periodic_period_length_fails(self) -> None:
         spec = _make_simple_spec(input_dim=1)
-        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.PERIODIC, period_length=0.0)
+        spec.feature_groups[0].kernel = LeafKernelSpec(kernel_type=KernelType.PERIODIC, period_length=0.0)
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("period_length" in error for error in result.errors)
 
     def test_invalid_bnn_depth_fails(self) -> None:
         spec = _make_simple_spec()
-        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.INFINITE_WIDTH_BNN, bnn_depth=0)
+        spec.feature_groups[0].kernel = LeafKernelSpec(kernel_type=KernelType.INFINITE_WIDTH_BNN, bnn_depth=0)
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("InfiniteWidthBNN depth" in error for error in result.errors)
 
     def test_exponential_decay_requires_single_feature(self) -> None:
         spec = _make_simple_spec(input_dim=2)
-        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.EXPONENTIAL_DECAY)
+        spec.feature_groups[0].kernel = LeafKernelSpec(kernel_type=KernelType.EXPONENTIAL_DECAY)
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("ExponentialDecayKernel requires exactly one active feature" in error for error in result.errors)
@@ -494,14 +495,14 @@ class TestValidateKernelParameterConstraints:
 class TestValidateKernelSpecificParameters:
     def test_rq_alpha_must_be_positive(self) -> None:
         spec = _make_simple_spec()
-        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.RQ, rq_alpha=0.0)
+        spec.feature_groups[0].kernel = LeafKernelSpec(kernel_type=KernelType.RQ, rq_alpha=0.0)
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("RQ alpha" in error for error in result.errors)
 
     def test_spectral_mixture_num_mixtures_must_be_positive(self) -> None:
         spec = _make_simple_spec()
-        spec.feature_groups[0].kernel = KernelSpec(kernel_type=KernelType.SPECTRAL_MIXTURE, num_mixtures=0)
+        spec.feature_groups[0].kernel = LeafKernelSpec(kernel_type=KernelType.SPECTRAL_MIXTURE, num_mixtures=0)
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("num_mixtures" in error for error in result.errors)

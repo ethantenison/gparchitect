@@ -103,16 +103,33 @@ Kernel construction follows these builder-side rules:
 
 **Key types**:
 - `GPSpec` — root DSL object
-- `FeatureGroupSpec` — a group of input features with a shared kernel
-- `KernelSpec` — a kernel or composition of kernels, with optional `time_varying` spec
+- `FeatureGroupSpec` — a group of input features with a shared `KernelExpr` kernel
+- `KernelExpr` — canonical discriminated union: `LeafKernelSpec | CompositeKernelSpec | ChangepointKernelSpec`
+- `LeafKernelSpec` — a base kernel node (kind="leaf"); carries family-specific params (ard, priors, etc.)
+- `CompositeKernelSpec` — an additive or multiplicative composition of child `KernelExpr` nodes (kind="composite")
+- `ChangepointKernelSpec` — a changepoint kernel with `kernel_before` and `kernel_after` (kind="changepoint")
+- `KernelSpec` — legacy class kept for backward compatibility; auto-normalized to `KernelExpr` when used in `FeatureGroupSpec`
 - `MeanSpec` — a shared or per-output mean-function specification
 - `NoiseSpec` — noise model specification
 - `PriorSpec` — hyperparameter prior specification
 - `ExecutionSpec` — explicit preprocessing and outcome-transform semantics, including
   `recency_filtering` (Tier 1) and `input_warping` (Tier 2)
 - `RecencyFilteringSpec` — Tier 1 dataset-truncation spec (formerly mislabeled "recency weighting")
-- `TimeVaryingSpec` — Tier 2 time-varying hyperparameter spec for `KernelSpec.time_varying`
+- `TimeVaryingSpec` — Tier 2 time-varying hyperparameter spec for `LeafKernelSpec.time_varying`
 - `InputWarpingSpec` — Tier 2 Kumaraswamy input-warp spec for `ExecutionSpec.input_warping`
+
+**Legacy compatibility** (`src/gparchitect/dsl/compat.py`):
+- `normalize_kernel_spec(spec: KernelSpec) -> KernelExpr` converts old payloads to the canonical union.
+  Ambiguous shapes (children with `composition=NONE`) raise a `ValueError` with an actionable message.
+- `FeatureGroupSpec` auto-normalizes old `KernelSpec` objects via a Pydantic `field_validator`.
+
+**Migration — old vs new kernel shape**:
+
+| Old (KernelSpec) | New (KernelExpr) |
+|---|---|
+| `KernelSpec(kernel_type=KernelType.RBF, ard=True)` | `LeafKernelSpec(kernel_type=KernelType.RBF, ard=True)` |
+| `KernelSpec(kernel_type=KernelType.RBF, composition=ADDITIVE, children=[...])` | `CompositeKernelSpec(composition=ADDITIVE, children=[LeafKernelSpec(...), ...])` |
+| `KernelSpec(kernel_type=CHANGEPOINT, children=[k1, k2])` | `ChangepointKernelSpec(kernel_before=LeafKernelSpec(...), kernel_after=LeafKernelSpec(...))` |
 
 For the current validated contract:
 
@@ -125,9 +142,8 @@ For the current validated contract:
   `GPSpec.execution` so they are machine-readable contract surface.
 - `recency_filtering` is dataset truncation (Tier 1), not true likelihood weighting.
   The canonical field name is `recency_filtering`; the old name `recency_weighting` is removed.
-- `time_varying` on a `KernelSpec` (Tier 2) wraps the base kernel with a linear modulation.
-  Only `parameterization="linear"` is supported.  Leaf and composed kernels (with children)
-  may carry `time_varying`.
+- `time_varying` on a `LeafKernelSpec` or `CompositeKernelSpec` (Tier 2) wraps the kernel with a linear modulation.
+  Only `parameterization="linear"` is supported.
 - `input_warping` on `ExecutionSpec` (Tier 2) applies a Kumaraswamy CDF warp via BoTorch's
   `Warp` input transform.  Input scaling should be active for the warp to operate in `[0, 1]`.
 - `heteroskedastic_noise=True` is currently rejected by the validator as a forward-compatibility
