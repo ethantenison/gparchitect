@@ -320,7 +320,8 @@ class KernelSpec(BaseModel):
     """Specification for a single kernel or composed kernel.
 
     Attributes:
-        kernel_type: The kernel family to use.
+        kernel_type: The kernel family to use for leaf kernels. Optional for
+            composed kernels that specify ``children`` and ``composition``.
         ard: Whether to use Automatic Relevance Determination (separate lengthscale per feature).
         lengthscale_prior: Optional prior on the lengthscale hyperparameter.
         outputscale_prior: Optional prior on the outputscale hyperparameter.
@@ -350,7 +351,7 @@ class KernelSpec(BaseModel):
             (children must be empty).
     """
 
-    kernel_type: KernelType
+    kernel_type: KernelType | None = None
     ard: bool = False
     lengthscale_prior: PriorSpec | None = None
     outputscale_prior: PriorSpec | None = None
@@ -523,6 +524,11 @@ def _kernel_spec_to_expr(spec: KernelSpec) -> KernelExpr:  # type: ignore[type-a
             children=[_kernel_spec_to_expr(child) for child in spec.children],
             outputscale_prior=spec.outputscale_prior,
             time_varying=spec.time_varying,
+        )
+
+    if spec.kernel_type is None:
+        raise ValueError(
+            "KernelSpec.kernel_type is required for leaf kernels (no children)."
         )
 
     return LeafKernelSpec(

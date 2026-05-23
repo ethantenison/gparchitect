@@ -367,6 +367,19 @@ class TestNormalizeKernelSpec:
         assert result.composition == CompositionType.ADDITIVE
         assert len(result.children) == 2
 
+    def test_additive_composite_normalizes_without_kernel_type(self) -> None:
+        old = KernelSpec(
+            composition=CompositionType.ADDITIVE,
+            children=[
+                KernelSpec(kernel_type=KernelType.RBF),
+                KernelSpec(kernel_type=KernelType.MATERN_52),
+            ],
+        )
+        result = normalize_kernel_spec(old)
+        assert isinstance(result, CompositeKernelSpec)
+        assert result.composition == CompositionType.ADDITIVE
+        assert len(result.children) == 2
+
     def test_changepoint_normalizes(self) -> None:
         old = KernelSpec(
             kernel_type=KernelType.CHANGEPOINT,
@@ -382,6 +395,27 @@ class TestNormalizeKernelSpec:
         assert isinstance(result.kernel_after, LeafKernelSpec)
         assert result.changepoint_location == pytest.approx(0.5)
 
+    def test_changepoint_normalizes_with_nested_composite_without_kernel_type(self) -> None:
+        old = KernelSpec(
+            kernel_type=KernelType.CHANGEPOINT,
+            children=[
+                KernelSpec(kernel_type=KernelType.MATERN_52),
+                KernelSpec(
+                    composition=CompositionType.ADDITIVE,
+                    children=[
+                        KernelSpec(kernel_type=KernelType.LINEAR),
+                        KernelSpec(kernel_type=KernelType.MATERN_52),
+                    ],
+                ),
+            ],
+            changepoint_location=0.45,
+            changepoint_steepness=0.08,
+        )
+        result = normalize_kernel_spec(old)
+        assert isinstance(result, ChangepointKernelSpec)
+        assert isinstance(result.kernel_after, CompositeKernelSpec)
+        assert len(result.kernel_after.children) == 2
+
     def test_ambiguous_children_with_none_composition_raises(self) -> None:
         old = KernelSpec(
             kernel_type=KernelType.RBF,
@@ -392,6 +426,11 @@ class TestNormalizeKernelSpec:
             ],
         )
         with pytest.raises(ValueError, match="ADDITIVE or MULTIPLICATIVE"):
+            normalize_kernel_spec(old)
+
+    def test_leaf_without_kernel_type_raises(self) -> None:
+        old = KernelSpec()
+        with pytest.raises(ValueError, match="kernel_type is required for leaf kernels"):
             normalize_kernel_spec(old)
 
 
