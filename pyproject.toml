@@ -3,24 +3,23 @@ name = "gparchitect"
 version = "0.1.0"
 description = "Build Gaussian Process models from natural-language instructions via a formal DSL using BoTorch and GPyTorch."
 readme = "README.md"
-requires-python = ">=3.11,<3.14"
+requires-python = ">=3.13,<3.14"
 license = "Apache-2.0"
 authors = [{ name = "ethantenison", email = "tenison.ethan@gmail.com" }]
 dependencies = [
-    "pydantic>=2.7,<3",
-    "torch>=2.4,<3",
-    "botorch>=0.11,<1",
-    "gpytorch>=1.11,<2",
-    "pandas>=2.2,<3",
-    "click>=8.1,<9",
+    "pydantic (>=2.13.4,<3.0.0)",
+    "torch (>=2.12.0,<3.0.0)",
+    "botorch (>=0.17.2,<0.18.0)",
+    "gpytorch (>=1.15.2,<2.0.0)",
+    "pandas (==2.3.3)",
+    "click (>=8.4.1,<9.0.0)",
     "matplotlib (>=3.10.9,<4.0.0)",
-    "pyarrow (>=24.0.0,<25.0.0)",
+    "pyarrow (>=23,<24)",
     "scikit-learn (>=1.8.0,<2.0.0)",
+    "mlflow (==3.12.0)",
 ]
 classifiers = [
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.11",
-    "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
 ]
 
@@ -32,10 +31,10 @@ gparchitect-plan = "gparchitect.planning.bridge:main"
 packages = [{ include = "gparchitect", from = "src" }]
 
 [tool.poetry.group.dev.dependencies]
-pytest = "9.0.2"
-pytest-cov = "7.0.0"
-ruff = "0.15.4"
-pre-commit = "^3.7"
+pytest = "^9.0.3"
+pytest-cov = "^7.1.0"
+ruff = "^0.15.15"
+pre-commit = "^4.6.0"
 ipykernel = "^7.2.0"
 
 [build-system]
