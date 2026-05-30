@@ -11,8 +11,10 @@ It compiles text into a typed GP DSL, validates the specification, builds/fits a
 - **Natural-language to GP DSL compiler** for `SingleTaskGP`, `MultiTaskGP`, and `ModelListGP`
 - **Feature-level kernel and mean control** (including kernel-specific parameters)
 - **Non-stationary modeling options**, including:
+  - [Changepoint kernels](docs/changepoint_kernel.md)
   - [Time-varying outputscale](docs/time_varying_outputscale.md)
   - [Time-varying lengthscale](docs/time_varying_lengthscale.md)
+  - recency filtering and input warping controls
 - **Automatic recovery pipeline** when fitting fails (revisions + retry)
 - **CI-checked worked examples** in `tests/e2e/` that run on pull requests
 
@@ -65,6 +67,7 @@ The DSL (`GPSpec`) is the single source of truth for model intent.
 ## 6. Links to Documentation
 
 - [Quickstart](docs/quickstart.md)
+- [Changepoint kernel feature guide](docs/changepoint_kernel.md)
 - [Time-varying outputscale feature guide](docs/time_varying_outputscale.md)
 - [Time-varying lengthscale feature guide](docs/time_varying_lengthscale.md)
 - [Architecture module map](docs/architecture_module_map.md)
