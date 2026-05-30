@@ -209,6 +209,8 @@ __marimo__/
 # Project-generated experiment artifacts
 results/
 notes/
+mlruns/
+mlflow.db
 
 # Analysis caches
 src/gparchitect/analysis/__pycache__/
