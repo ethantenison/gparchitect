@@ -10,6 +10,8 @@ It compiles text into a typed GP DSL, validates the specification, builds/fits a
 
 - **Natural-language to GP DSL compiler** for `SingleTaskGP`, `MultiTaskGP`, and `ModelListGP`
 - **Feature-level kernel and mean control** (including kernel-specific parameters)
+- **Natural-language prior phrases** for supported kernel and noise parameters
+- **Natural-language feature-group assignment** across input columns
 - **Non-stationary modeling options**, including:
   - [Changepoint kernels](docs/changepoint_kernel.md)
   - [Time-varying outputscale](docs/time_varying_outputscale.md)
@@ -68,6 +70,8 @@ The DSL (`GPSpec`) is the single source of truth for model intent.
 
 - [Quickstart](docs/quickstart.md)
 - [Changepoint kernel feature guide](docs/changepoint_kernel.md)
+- [Natural-language priors feature guide](docs/natural_language_priors.md)
+- [Natural-language feature groups guide](docs/natural_language_feature_groups.md)
 - [Time-varying outputscale feature guide](docs/time_varying_outputscale.md)
 - [Time-varying lengthscale feature guide](docs/time_varying_lengthscale.md)
 - [Architecture module map](docs/architecture_module_map.md)
