@@ -14,6 +14,7 @@ from gparchitect.dsl.schema import (
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
+    InputScalingMethod,
     KernelSpec,
     KernelType,
     LeafKernelSpec,
@@ -248,6 +249,11 @@ class TestGPSpec:
         data = json.loads(spec.model_dump_json())
         assert data["execution"]["input_scaling"] is False
         assert data["execution"]["outcome_standardization"] is False
+
+    def test_execution_spec_syncs_explicit_scaling_method(self) -> None:
+        spec = ExecutionSpec(input_scaling_method=InputScalingMethod.STANDARDIZE)
+        assert spec.input_scaling is True
+        assert spec.resolved_input_scaling_method == InputScalingMethod.STANDARDIZE
 
     def test_description_field(self) -> None:
         spec = GPSpec(description="Test spec")

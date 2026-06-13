@@ -33,7 +33,8 @@ poetry add gparchitect
 ### 1. Prepare your data
 
 GPArchitect accepts a **pandas DataFrame** with labelled input and output columns.
-Continuous input columns are min-max scaled into the unit cube before model building.
+Continuous input columns are min-max scaled by default before model building, and
+the execution spec can instead request standardization or raw inputs.
 
 ```python
 import pandas as pd

@@ -42,6 +42,7 @@ from gparchitect.dsl.schema import (
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
+    InputScalingMethod,
     InputWarpingSpec,
     KernelType,
     LeafKernelSpec,
@@ -104,6 +105,21 @@ _DISABLE_ARD_PATTERN = re.compile(
 _FIXED_NOISE_PATTERN = re.compile(r"\bfixed.?noise\b|\bnoise.?free\b|\bnoiseless\b", re.IGNORECASE)
 _ADDITIVE_PATTERN = re.compile(r"\badditive\b|\bsum.?of.?kernel\b", re.IGNORECASE)
 _MULTIPLICATIVE_PATTERN = re.compile(r"\bmultiplicative\b|\bproduct.?of.?kernel\b", re.IGNORECASE)
+_NO_INPUT_SCALING_PATTERN = re.compile(
+    r"\b(?:no|without|disable|disabled|raw|unscaled)\s+(?:input\s+)?scal(?:e|ing)\b|"
+    r"\braw\s+inputs\b",
+    re.IGNORECASE,
+)
+_STANDARD_INPUT_SCALING_PATTERN = re.compile(
+    r"\b(?:standard(?:ize|ized|ization)?|z[\s\-_]?score)\s+(?:input\s+)?scal(?:e|ing|er)?\b|"
+    r"\b(?:input\s+)?standard\s+scal(?:e|ing|er)\b",
+    re.IGNORECASE,
+)
+_MINMAX_INPUT_SCALING_PATTERN = re.compile(
+    r"\bmin[\s\-_]?max\s+(?:input\s+)?scal(?:e|ing|er)\b|"
+    r"\bunit[\s\-_]?cube\b|\bnormalize\s+inputs?\s+to\s+\[?0\s*,\s*1\]?\b",
+    re.IGNORECASE,
+)
 _FEATURE_PREPOSITION_PATTERN = re.compile(r"\b(?:on|for|across|over|applied to|using)\b", re.IGNORECASE)
 _RQ_ALPHA_PATTERN = re.compile(r"\balpha\s*(?:=|of)?\s*([0-9]*\.?[0-9]+)\b", re.IGNORECASE)
 _NUM_MIXTURES_PATTERN = re.compile(
@@ -688,8 +704,20 @@ def _default_execution_spec(model_class: ModelClass) -> ExecutionSpec:
     """Return the default execution semantics for a translated spec."""
     return ExecutionSpec(
         input_scaling=True,
+        input_scaling_method=InputScalingMethod.MIN_MAX,
         outcome_standardization=model_class != ModelClass.MULTI_TASK_GP,
     )
+
+
+def _detect_input_scaling_method(instruction: str) -> InputScalingMethod | None:
+    """Infer an explicit continuous-input scaling method from natural language."""
+    if _NO_INPUT_SCALING_PATTERN.search(instruction):
+        return InputScalingMethod.NONE
+    if _STANDARD_INPUT_SCALING_PATTERN.search(instruction):
+        return InputScalingMethod.STANDARDIZE
+    if _MINMAX_INPUT_SCALING_PATTERN.search(instruction):
+        return InputScalingMethod.MIN_MAX
+    return None
 
 
 def _parse_mean_type(mean_name: str) -> MeanFunctionType:
@@ -881,6 +909,7 @@ def translate_to_dsl(
     recency_filtering = _detect_recency_filtering(instruction, input_dim, input_feature_names)
     time_varying_result = _detect_time_varying_spec(instruction, input_dim, input_feature_names)
     input_warping = _detect_input_warping(instruction, input_dim, input_feature_names)
+    input_scaling_method = _detect_input_scaling_method(instruction)
 
     # Apply time-varying modulation to the default kernel spec if detected.
     if time_varying_result is not None and isinstance(default_kernel_spec, LeafKernelSpec):
@@ -946,6 +975,7 @@ def translate_to_dsl(
     base_execution = _default_execution_spec(model_class)
     execution = ExecutionSpec(
         input_scaling=base_execution.input_scaling,
+        input_scaling_method=input_scaling_method or base_execution.input_scaling_method,
         outcome_standardization=base_execution.outcome_standardization,
         recency_filtering=recency_filtering,
         input_warping=input_warping,

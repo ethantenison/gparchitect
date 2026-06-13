@@ -48,6 +48,7 @@ class TestRunGPArchitectMocked:
         assert log.final_success is True
         assert len(log.attempts) == 1
         assert log.input_scaling_applied is True
+        assert log.input_scaling_method == "minmax"
         assert log.input_feature_ranges == {"x1": (1.0, 3.0), "x2": (4.0, 6.0)}
 
     @patch("gparchitect.api.fit_and_validate")

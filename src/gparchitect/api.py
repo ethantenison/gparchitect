@@ -103,6 +103,7 @@ def run_gparchitect(
         output_columns,
         task_column,
         scale_inputs=spec.execution.input_scaling,
+        scaling_method=spec.execution.resolved_input_scaling_method,
     )
 
     experiment_log = ExperimentLog(
@@ -110,6 +111,7 @@ def run_gparchitect(
         input_dim=data_bundle.input_dim,
         output_dim=data_bundle.output_dim,
         input_scaling_applied=data_bundle.input_scaling_applied,
+        input_scaling_method=data_bundle.input_scaling_method,
         input_feature_ranges=data_bundle.input_feature_ranges,
     )
 

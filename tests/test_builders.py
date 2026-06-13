@@ -15,6 +15,7 @@ from gparchitect.dsl.schema import (
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
+    InputScalingMethod,
     KernelSpec,
     KernelType,
     LeafKernelSpec,
@@ -570,6 +571,27 @@ class TestBuildModelMocked:
         assert isinstance(model.covar_module.base_kernel.period_length_prior, UniformPrior)
         assert isinstance(model.likelihood.noise_covar.noise_prior, HalfCauchyPrior)
 
+    def test_standardized_inputs_receive_default_priors(self) -> None:
+        self._skip_if_no_torch_botorch()
+        import torch
+
+        from gparchitect.builders.builder import build_model_from_dsl
+
+        minmax_spec = _make_continuous_spec(input_dim=2)
+        standardized_spec = _make_continuous_spec(input_dim=2)
+        standardized_spec.execution = ExecutionSpec(input_scaling_method=InputScalingMethod.STANDARDIZE)
+
+        train_X = torch.tensor([[1.0, 10.0], [2.0, 11.0], [3.0, 9.0]], dtype=torch.double)
+        train_Y = torch.tensor([[0.1], [0.2], [0.3]], dtype=torch.double)
+
+        minmax_model = build_model_from_dsl(minmax_spec, train_X, train_Y)
+        standardized_model = build_model_from_dsl(standardized_spec, train_X, train_Y)
+
+        assert minmax_model.covar_module.base_kernel.lengthscale_prior is None
+        assert minmax_model.covar_module.outputscale_prior is None
+        assert standardized_model.covar_module.base_kernel.lengthscale_prior is not None
+        assert standardized_model.covar_module.outputscale_prior is not None
+
     def test_model_list_gp_supports_per_output_means(self) -> None:
         self._skip_if_no_torch_botorch()
         import gpytorch
@@ -766,6 +788,26 @@ class TestDataPrepare:
 
         assert bundle.input_scaling_applied is False
         assert bundle.train_X[:, 0].tolist() == [2.0, 3.0, 5.0]
+
+    def test_prepare_data_can_standardize_inputs(self) -> None:
+        try:
+            import pandas as pd
+        except ImportError:
+            pytest.skip("pandas not installed")
+
+        from gparchitect.builders.data import prepare_data
+
+        df = pd.DataFrame({"x1": [1.0, 2.0, 3.0], "y": [0.1, 0.2, 0.3]})
+        bundle = prepare_data(
+            df,
+            input_columns=["x1"],
+            output_columns=["y"],
+            scaling_method=InputScalingMethod.STANDARDIZE,
+        )
+
+        assert bundle.input_scaling_applied is True
+        assert bundle.input_scaling_method == "standardize"
+        assert bundle.train_X[:, 0].tolist() == pytest.approx([-1.2247448714, 0.0, 1.2247448714])
 
     def test_prepare_data_missing_column_raises(self) -> None:
         try:

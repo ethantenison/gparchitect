@@ -6,6 +6,7 @@ import pytest
 
 from gparchitect.dsl.schema import (
     CompositionType,
+    InputScalingMethod,
     KernelType,
     MeanFunctionType,
     ModelClass,
@@ -293,6 +294,7 @@ class TestTranslateStructure:
     def test_single_task_defaults_to_explicit_execution_spec(self) -> None:
         spec = translate_to_dsl("GP model", input_dim=2)
         assert spec.execution.input_scaling is True
+        assert spec.execution.input_scaling_method == InputScalingMethod.MIN_MAX
         assert spec.execution.outcome_standardization is True
 
     def test_multitask_defaults_disable_outcome_standardization(self) -> None:
@@ -304,7 +306,18 @@ class TestTranslateStructure:
             task_values=[0, 1],
         )
         assert spec.execution.input_scaling is True
+        assert spec.execution.input_scaling_method == InputScalingMethod.MIN_MAX
         assert spec.execution.outcome_standardization is False
+
+    def test_standard_scaler_instruction_is_translated(self) -> None:
+        spec = translate_to_dsl("Use a standard scaler on the inputs", input_dim=2)
+        assert spec.execution.input_scaling is True
+        assert spec.execution.input_scaling_method == InputScalingMethod.STANDARDIZE
+
+    def test_raw_input_instruction_disables_scaling(self) -> None:
+        spec = translate_to_dsl("Use raw inputs without input scaling", input_dim=2)
+        assert spec.execution.input_scaling is False
+        assert spec.execution.input_scaling_method == InputScalingMethod.NONE
 
     def test_model_list_uses_single_shared_group_when_no_feature_mapping_exists(self) -> None:
         spec = translate_to_dsl("ModelListGP", input_dim=3, output_dim=3)
