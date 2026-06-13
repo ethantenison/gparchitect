@@ -587,10 +587,10 @@ class TestBuildModelMocked:
         minmax_model = build_model_from_dsl(minmax_spec, train_X, train_Y)
         standardized_model = build_model_from_dsl(standardized_spec, train_X, train_Y)
 
-        assert minmax_model.covar_module.base_kernel.lengthscale_prior is None
-        assert minmax_model.covar_module.outputscale_prior is None
-        assert standardized_model.covar_module.base_kernel.lengthscale_prior is not None
-        assert standardized_model.covar_module.outputscale_prior is not None
+        assert getattr(minmax_model.covar_module.base_kernel, "lengthscale_prior", None) is None
+        assert getattr(minmax_model.covar_module, "outputscale_prior", None) is None
+        assert getattr(standardized_model.covar_module.base_kernel, "lengthscale_prior", None) is not None
+        assert getattr(standardized_model.covar_module, "outputscale_prior", None) is not None
 
     def test_model_list_gp_supports_per_output_means(self) -> None:
         self._skip_if_no_torch_botorch()
