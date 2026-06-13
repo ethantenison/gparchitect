@@ -38,6 +38,7 @@ from gparchitect.dsl.schema import (
     CompositeKernelSpec,
     CompositionType,
     GPSpec,
+    InputScalingMethod,
     KernelExpr,
     KernelType,
     LeafKernelSpec,
@@ -420,6 +421,11 @@ def _check_execution(spec: GPSpec, result: ValidationResult) -> None:
 
     iw = spec.execution.input_warping
     if iw is not None:
+        if spec.execution.resolved_input_scaling_method != InputScalingMethod.MIN_MAX:
+            result.errors.append(
+                "input_warping requires input_scaling_method='minmax' because the Kumaraswamy warp expects "
+                "the warped feature in [0, 1]."
+            )
         if iw.time_feature_index < 0 or iw.time_feature_index >= spec.input_dim:
             result.errors.append(
                 f"input_warping.time_feature_index={iw.time_feature_index} is out of range "

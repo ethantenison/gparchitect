@@ -20,7 +20,8 @@ Outputs:
 
 Non-obvious design decisions:
     - Tensors are always float64 (torch.double) for numerical stability with BoTorch.
-        - Continuous input columns are min-max scaled into [0, 1] before model building.
+        - Continuous input columns can be min-max scaled, standardized, or left raw
+          before model building.
     - The task column is kept in train_X (as the last column when specified) so that
       the builder module can extract it by index.
     - Missing values are rejected with a clear error.
@@ -34,6 +35,8 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass
+
+from gparchitect.dsl.schema import InputScalingMethod
 
 logger = logging.getLogger(__name__)
 
@@ -62,6 +65,7 @@ class DataBundle:
     output_columns: list[str]
     task_column: str | None
     input_scaling_applied: bool
+    input_scaling_method: str
     input_feature_ranges: dict[str, tuple[float, float]]
 
 
@@ -72,6 +76,7 @@ def prepare_data(
     task_column: str | None = None,
     *,
     scale_inputs: bool = True,
+    scaling_method: InputScalingMethod | None = None,
 ) -> DataBundle:
     """Convert a pandas DataFrame into a DataBundle of torch tensors.
 
@@ -80,7 +85,8 @@ def prepare_data(
         input_columns: Column names to use as model inputs.
         output_columns: Column names to use as model outputs.
         task_column: Optional column name for the task indicator (MultiTaskGP).
-        scale_inputs: Whether to min-max scale continuous input columns.
+        scale_inputs: Legacy boolean toggle for continuous-input scaling.
+        scaling_method: Explicit scaling method for continuous inputs.
 
     Returns:
         DataBundle containing train_X, train_Y, and associated metadata.
@@ -108,16 +114,26 @@ def prepare_data(
         input_cols_full.append(task_column)
         task_feature_index = len(input_cols_full) - 1
 
+    resolved_scaling_method = scaling_method or (
+        InputScalingMethod.MIN_MAX if scale_inputs else InputScalingMethod.NONE
+    )
     scaled_inputs = dataframe[input_columns].copy()
     input_feature_ranges: dict[str, tuple[float, float]] = {}
     for column in input_columns:
         column_min = float(scaled_inputs[column].min())
         column_max = float(scaled_inputs[column].max())
         input_feature_ranges[column] = (column_min, column_max)
-        scale = column_max - column_min
-        if scale_inputs:
+        if resolved_scaling_method == InputScalingMethod.MIN_MAX:
+            scale = column_max - column_min
             if scale > 0:
                 scaled_inputs[column] = (scaled_inputs[column] - column_min) / scale
+            else:
+                scaled_inputs[column] = 0.0
+        elif resolved_scaling_method == InputScalingMethod.STANDARDIZE:
+            column_mean = float(scaled_inputs[column].mean())
+            column_std = float(scaled_inputs[column].std(ddof=0))
+            if column_std > 0:
+                scaled_inputs[column] = (scaled_inputs[column] - column_mean) / column_std
             else:
                 scaled_inputs[column] = 0.0
 
@@ -150,6 +166,7 @@ def prepare_data(
         input_columns=input_cols_full,
         output_columns=output_columns,
         task_column=task_column,
-        input_scaling_applied=scale_inputs,
+        input_scaling_applied=resolved_scaling_method != InputScalingMethod.NONE,
+        input_scaling_method=resolved_scaling_method.value,
         input_feature_ranges=input_feature_ranges,
     )

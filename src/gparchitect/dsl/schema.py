@@ -50,7 +50,7 @@ from __future__ import annotations
 from enum import Enum
 from typing import Annotated, Any, Literal, Union
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class ModelClass(str, Enum):
@@ -110,6 +110,21 @@ class PriorDistribution(str, Enum):
     GAMMA = "Gamma"
     HALF_CAUCHY = "HalfCauchy"
     UNIFORM = "Uniform"
+
+
+class InputScalingMethod(str, Enum):
+    """Supported continuous-input scaling modes.
+
+    NONE: Leave continuous inputs in their raw feature space.
+    MIN_MAX: Scale each continuous input into [0, 1], matching BoTorch's
+        Normalize-style unit-cube convention.
+    STANDARDIZE: Center each continuous input and divide by its population
+        standard deviation, matching standard z-score scaling.
+    """
+
+    NONE = "none"
+    MIN_MAX = "minmax"
+    STANDARDIZE = "standardize"
 
 
 class PriorSpec(BaseModel):
@@ -271,7 +286,12 @@ class ExecutionSpec(BaseModel):
     """Execution semantics that affect how a validated DSL is run.
 
     Attributes:
-        input_scaling: Whether continuous inputs are min-max scaled before model building.
+        input_scaling: Legacy boolean toggle for continuous-input scaling.  When
+            input_scaling_method is not provided, True means min-max scaling and
+            False means raw inputs.
+        input_scaling_method: Explicit continuous-input scaling method.  When set,
+            this becomes the authoritative scaling policy and keeps input_scaling in
+            sync for backward compatibility.
         outcome_standardization: Whether BoTorch outcome transforms standardize outputs where supported.
         recency_filtering: Optional recency-filtering configuration for time-driven
             non-stationarity.  When set, old observations are removed from the training
@@ -282,9 +302,24 @@ class ExecutionSpec(BaseModel):
     """
 
     input_scaling: bool = True
+    input_scaling_method: InputScalingMethod | None = None
     outcome_standardization: bool = True
     recency_filtering: RecencyFilteringSpec | None = None
     input_warping: InputWarpingSpec | None = None
+
+    @property
+    def resolved_input_scaling_method(self) -> InputScalingMethod:
+        """Return the effective continuous-input scaling method."""
+        if self.input_scaling_method is not None:
+            return self.input_scaling_method
+        return InputScalingMethod.MIN_MAX if self.input_scaling else InputScalingMethod.NONE
+
+    @model_validator(mode="after")
+    def _sync_input_scaling_toggle(self) -> ExecutionSpec:
+        """Keep the legacy boolean in sync when an explicit scaling method is set."""
+        if self.input_scaling_method is not None:
+            self.input_scaling = self.input_scaling_method != InputScalingMethod.NONE
+        return self
 
 
 class NoiseSpec(BaseModel):

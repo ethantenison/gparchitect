@@ -79,7 +79,8 @@ class ExperimentLog:
         instruction: The original natural-language instruction.
         input_dim: Number of input features.
         output_dim: Number of output features.
-        input_scaling_applied: Whether continuous inputs were min-max scaled.
+        input_scaling_applied: Whether any continuous-input scaling was applied.
+        input_scaling_method: Which continuous-input scaling method was used.
         input_feature_ranges: Original min/max ranges for each continuous input feature.
         attempts: List of AttemptRecord objects, one per pipeline attempt.
         final_success: Whether any attempt succeeded.
@@ -90,6 +91,7 @@ class ExperimentLog:
     input_dim: int
     output_dim: int
     input_scaling_applied: bool = False
+    input_scaling_method: str = "none"
     input_feature_ranges: dict[str, tuple[float, float]] = field(default_factory=dict)
     attempts: list[AttemptRecord] = field(default_factory=list)
     final_success: bool = False
@@ -115,6 +117,7 @@ class ExperimentLog:
             "input_dim": self.input_dim,
             "output_dim": self.output_dim,
             "input_scaling_applied": self.input_scaling_applied,
+            "input_scaling_method": self.input_scaling_method,
             "input_feature_ranges": self.input_feature_ranges,
             "final_success": self.final_success,
             "created_at": self.created_at,
@@ -162,6 +165,7 @@ def summarize_attempts(experiment_log: ExperimentLog) -> str:
         f"  Input dim   : {experiment_log.input_dim}",
         f"  Output dim  : {experiment_log.output_dim}",
         f"  Input scaled: {experiment_log.input_scaling_applied}",
+        f"  Input scaling method: {experiment_log.input_scaling_method}",
         f"  Total attempts: {len(experiment_log.attempts)}",
         f"  Final success : {experiment_log.final_success}",
         "",

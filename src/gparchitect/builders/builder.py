@@ -39,6 +39,7 @@ What this module does NOT do:
 from __future__ import annotations
 
 import logging
+import math
 from typing import TYPE_CHECKING, Any, cast
 
 from gparchitect.dsl.schema import (
@@ -46,6 +47,7 @@ from gparchitect.dsl.schema import (
     CompositeKernelSpec,
     CompositionType,
     GPSpec,
+    InputScalingMethod,
     KernelExpr,
     KernelType,
     LeafKernelSpec,
@@ -61,6 +63,8 @@ if TYPE_CHECKING:
     import torch
 
 logger = logging.getLogger(__name__)
+
+_STANDARDIZED_LENGTHSCALE_SHIFT = 0.5 * math.log(12.0)
 
 
 def _build_gpytorch_prior(prior_spec: PriorSpec | None):  # noqa: ANN201
@@ -93,6 +97,30 @@ def _build_gpytorch_prior(prior_spec: PriorSpec | None):  # noqa: ANN201
     raise ValueError(f"Unsupported prior distribution: {prior_spec.distribution}")
 
 
+def _build_default_lengthscale_prior(
+    input_scaling_method: InputScalingMethod,
+    num_features: int,
+):
+    """Build an automatic lengthscale prior for standardized inputs."""
+    if input_scaling_method != InputScalingMethod.STANDARDIZE:
+        return None
+
+    from gpytorch.priors.torch_priors import LogNormalPrior
+
+    loc = math.sqrt(2.0) + 0.5 * math.log(max(num_features, 1)) + _STANDARDIZED_LENGTHSCALE_SHIFT
+    return LogNormalPrior(loc=loc, scale=math.sqrt(3.0))
+
+
+def _build_default_outputscale_prior(input_scaling_method: InputScalingMethod):  # noqa: ANN201
+    """Build an automatic outputscale prior for standardized inputs."""
+    if input_scaling_method != InputScalingMethod.STANDARDIZE:
+        return None
+
+    from gpytorch.priors.torch_priors import LogNormalPrior
+
+    return LogNormalPrior(loc=0.0, scale=1.25)
+
+
 def _build_gpytorch_kernel(kernel_spec: KernelExpr, num_features: int):  # noqa: ANN201
     """Construct a GPyTorch kernel from a KernelExpr.
 
@@ -112,6 +140,7 @@ def _build_gpytorch_kernel_with_active_dims(
     active_dims: tuple[int, ...],
     ard_num_dims: int | None = None,
     *,
+    input_scaling_method: InputScalingMethod = InputScalingMethod.MIN_MAX,
     wrap_in_scale: bool = True,
     train_X=None,  # noqa: ANN001
     train_Y=None,  # noqa: ANN001
@@ -119,21 +148,52 @@ def _build_gpytorch_kernel_with_active_dims(
     """Construct a GPyTorch kernel from a KernelExpr and explicit active dimensions."""
 
     outputscale_prior = _build_gpytorch_prior(kernel_spec.outputscale_prior)
+    supports_default_outputscale = not (
+        kernel_spec.kind == "composite" and kernel_spec.composition == CompositionType.ADDITIVE
+    )
+    if outputscale_prior is None and wrap_in_scale and supports_default_outputscale:
+        outputscale_prior = _build_default_outputscale_prior(input_scaling_method)
 
     if kernel_spec.kind == "changepoint":
-        return _build_changepoint_kernel(kernel_spec, active_dims, outputscale_prior, wrap_in_scale, train_X, train_Y)
+        return _build_changepoint_kernel(
+            kernel_spec,
+            active_dims,
+            outputscale_prior,
+            input_scaling_method,
+            wrap_in_scale,
+            train_X,
+            train_Y,
+        )
 
     if kernel_spec.kind == "composite":
-        return _build_composite_kernel(kernel_spec, active_dims, outputscale_prior, wrap_in_scale, train_X, train_Y)
+        return _build_composite_kernel(
+            kernel_spec,
+            active_dims,
+            outputscale_prior,
+            input_scaling_method,
+            wrap_in_scale,
+            train_X,
+            train_Y,
+        )
 
     # kernel_spec.kind == "leaf"
-    return _build_leaf_kernel(kernel_spec, active_dims, ard_num_dims, outputscale_prior, wrap_in_scale, train_X, train_Y)
+    return _build_leaf_kernel(
+        kernel_spec,
+        active_dims,
+        ard_num_dims,
+        outputscale_prior,
+        input_scaling_method,
+        wrap_in_scale,
+        train_X,
+        train_Y,
+    )
 
 
 def _build_changepoint_kernel(
     kernel_spec: ChangepointKernelSpec,
     active_dims: tuple[int, ...],
     outputscale_prior,  # noqa: ANN001
+    input_scaling_method: InputScalingMethod,
     wrap_in_scale: bool,
     train_X,  # noqa: ANN001
     train_Y,  # noqa: ANN001
@@ -146,6 +206,7 @@ def _build_changepoint_kernel(
     k_before = _build_gpytorch_kernel_with_active_dims(
         kernel_spec.kernel_before,
         active_dims,
+        input_scaling_method=input_scaling_method,
         wrap_in_scale=False,
         train_X=train_X,
         train_Y=train_Y,
@@ -153,6 +214,7 @@ def _build_changepoint_kernel(
     k_after = _build_gpytorch_kernel_with_active_dims(
         kernel_spec.kernel_after,
         active_dims,
+        input_scaling_method=input_scaling_method,
         wrap_in_scale=False,
         train_X=train_X,
         train_Y=train_Y,
@@ -175,6 +237,7 @@ def _build_composite_kernel(
     kernel_spec: CompositeKernelSpec,
     active_dims: tuple[int, ...],
     outputscale_prior,  # noqa: ANN001
+    input_scaling_method: InputScalingMethod,
     wrap_in_scale: bool,
     train_X,  # noqa: ANN001
     train_Y,  # noqa: ANN001
@@ -192,6 +255,7 @@ def _build_composite_kernel(
             _build_gpytorch_kernel_with_active_dims(
                 child,
                 active_dims,
+                input_scaling_method=input_scaling_method,
                 train_X=train_X,
                 train_Y=train_Y,
             )
@@ -216,6 +280,7 @@ def _build_composite_kernel(
         _build_gpytorch_kernel_with_active_dims(
             child,
             active_dims,
+            input_scaling_method=input_scaling_method,
             wrap_in_scale=False,
             train_X=train_X,
             train_Y=train_Y,
@@ -252,6 +317,7 @@ def _build_leaf_kernel(
     active_dims: tuple[int, ...],
     ard_num_dims: int | None,
     outputscale_prior,  # noqa: ANN001
+    input_scaling_method: InputScalingMethod,
     wrap_in_scale: bool,
     train_X,  # noqa: ANN001
     train_Y,  # noqa: ANN001
@@ -262,7 +328,10 @@ def _build_leaf_kernel(
     from botorch.models.kernels.infinite_width_bnn import InfiniteWidthBNNKernel
 
     resolved_ard_num_dims = len(active_dims) if kernel_spec.ard else ard_num_dims
-    lengthscale_prior = _build_gpytorch_prior(kernel_spec.lengthscale_prior)
+    lengthscale_prior = _build_gpytorch_prior(kernel_spec.lengthscale_prior) or _build_default_lengthscale_prior(
+        input_scaling_method,
+        len(active_dims),
+    )
     period_prior = _build_gpytorch_prior(kernel_spec.period_prior)
 
     if kernel_spec.kernel_type == KernelType.SPECTRAL_MIXTURE:
@@ -396,12 +465,14 @@ def _build_group_kernel(
     wrap_in_scale: bool = True,
     train_X=None,  # noqa: ANN001
     train_Y=None,  # noqa: ANN001
+    input_scaling_method: InputScalingMethod = InputScalingMethod.MIN_MAX,
 ):  # noqa: ANN001, ANN201
     """Build a covariance kernel for a single feature group."""
     active_dims = tuple(feature_index_map[index] for index in group.feature_indices)
     return _build_gpytorch_kernel_with_active_dims(
         group.kernel,
         active_dims,
+        input_scaling_method=input_scaling_method,
         wrap_in_scale=wrap_in_scale,
         train_X=train_X,
         train_Y=train_Y,
@@ -413,6 +484,8 @@ def _build_covariance_module(
     feature_index_map: dict[int, int],
     train_X=None,
     train_Y=None,
+    *,
+    input_scaling_method: InputScalingMethod = InputScalingMethod.MIN_MAX,
 ):  # noqa: ANN001, ANN201
     """Build the combined covariance module from all feature groups.
 
@@ -425,7 +498,14 @@ def _build_covariance_module(
     import gpytorch
 
     group_kernels = [
-        _build_group_kernel(group, feature_index_map, train_X=train_X, train_Y=train_Y) for group in spec.feature_groups
+        _build_group_kernel(
+            group,
+            feature_index_map,
+            input_scaling_method=input_scaling_method,
+            train_X=train_X,
+            train_Y=train_Y,
+        )
+        for group in spec.feature_groups
     ]
 
     if len(group_kernels) == 1:
@@ -441,6 +521,7 @@ def _build_covariance_module(
                         _build_group_kernel(
                             left_group,
                             feature_index_map,
+                            input_scaling_method=input_scaling_method,
                             wrap_in_scale=False,
                             train_X=train_X,
                             train_Y=train_Y,
@@ -448,6 +529,7 @@ def _build_covariance_module(
                         _build_group_kernel(
                             right_group,
                             feature_index_map,
+                            input_scaling_method=input_scaling_method,
                             wrap_in_scale=False,
                             train_X=train_X,
                             train_Y=train_Y,
@@ -467,6 +549,7 @@ def _build_covariance_module(
                 _build_group_kernel(
                     group,
                     feature_index_map,
+                    input_scaling_method=input_scaling_method,
                     wrap_in_scale=False,
                     train_X=train_X,
                     train_Y=train_Y,
@@ -615,11 +698,11 @@ def _build_input_transform(
     n_cols = full_X.shape[-1]
     mapped_index = max(0, min(mapped_index, n_cols - 1))
 
-    # When input_scaling is enabled, the DSL contract expects continuous inputs in [0, 1].
+    # When min-max scaling is enabled, the DSL contract expects continuous inputs in [0, 1].
     # Provide explicit unit-cube bounds so Warp does not learn bounds from only the
     # training subset (which can collapse extrapolation points to a constant value).
     warp_bounds = None
-    if spec.execution.input_scaling:
+    if spec.execution.resolved_input_scaling_method == InputScalingMethod.MIN_MAX:
         warp_bounds = full_X.new_tensor([[0.0], [1.0]])
 
     warp_transform = Warp(indices=[mapped_index], d=n_cols, bounds=warp_bounds)
@@ -670,9 +753,16 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
     logger.info("Building model: class=%s, input_shape=%s", spec.model_class.value, tuple(full_X.shape))
 
     input_transform = _build_input_transform(spec, feature_index_map, full_X)
+    input_scaling_method = spec.execution.resolved_input_scaling_method
 
     if spec.model_class == ModelClass.SINGLE_TASK_GP:
-        covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
+        covar_module = _build_covariance_module(
+            spec,
+            feature_index_map,
+            input_scaling_method=input_scaling_method,
+            train_X=full_X,
+            train_Y=full_Y,
+        )
         mean_module = _build_mean_module(spec, input_size=full_X.shape[-1])
         likelihood = _build_likelihood(spec, train_Y=full_Y, model_class=spec.model_class)
         outcome_transform = Standardize(m=full_Y.shape[-1]) if spec.execution.outcome_standardization else None
@@ -698,7 +788,13 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
             raise ValueError(
                 f"Observed task values {observed_task_values} do not match declared task_values {task_values}."
             )
-        covar_module = _build_covariance_module(spec, feature_index_map, full_X, full_Y)
+        covar_module = _build_covariance_module(
+            spec,
+            feature_index_map,
+            input_scaling_method=input_scaling_method,
+            train_X=full_X,
+            train_Y=full_Y,
+        )
         mean_module = _build_multitask_mean_module(
             spec,
             task_values=task_values,
@@ -727,7 +823,13 @@ def build_model_from_dsl(spec: GPSpec, train_X: "torch.Tensor", train_Y: "torch.
         individual_models = []
         for output_idx in range(spec.output_dim):
             output_train_Y = full_Y[:, output_idx : output_idx + 1]
-            covar_module = _build_covariance_module(spec, feature_index_map, full_X, output_train_Y)
+            covar_module = _build_covariance_module(
+                spec,
+                feature_index_map,
+                input_scaling_method=input_scaling_method,
+                train_X=full_X,
+                train_Y=output_train_Y,
+            )
             mean_module = _build_mean_module(spec, input_size=full_X.shape[-1], output_index=output_idx)
             likelihood = _build_likelihood(spec, train_Y=output_train_Y, model_class=ModelClass.SINGLE_TASK_GP)
             outcome_transform = Standardize(m=1) if spec.execution.outcome_standardization else None

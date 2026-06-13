@@ -11,6 +11,8 @@ from gparchitect.dsl.schema import (
     ExecutionSpec,
     FeatureGroupSpec,
     GPSpec,
+    InputScalingMethod,
+    InputWarpingSpec,
     KernelSpec,
     KernelType,
     LeafKernelSpec,
@@ -20,6 +22,7 @@ from gparchitect.dsl.schema import (
     NoiseSpec,
     PriorDistribution,
     PriorSpec,
+    WarpType,
 )
 from gparchitect.validation.validator import ValidationResult, validate_dsl, validate_or_raise
 
@@ -282,6 +285,18 @@ class TestValidateExecution:
         result = validate_dsl(spec)
         assert not result.is_valid
         assert any("outcome_standardization" in error for error in result.errors)
+
+    def test_input_warping_requires_minmax_scaling(self) -> None:
+        spec = _make_simple_spec(input_dim=2)
+        spec.execution = ExecutionSpec(
+            input_scaling_method=InputScalingMethod.STANDARDIZE,
+            input_warping=InputWarpingSpec(warp_type=WarpType.KUMARASWAMY, time_feature_index=0),
+        )
+
+        result = validate_dsl(spec)
+
+        assert not result.is_valid
+        assert any("input_scaling_method='minmax'" in error for error in result.errors)
 
 
 class TestValidateMeans:
