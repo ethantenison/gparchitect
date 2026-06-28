@@ -1,0 +1,146 @@
+{
+  "schema": "gparchitect.time_varying_parameterizations.v1",
+  "run_id": "20260628_gp_18etf_plain_roll60m_rank5_fixedtask_24w_botorchdefault",
+  "created_at_utc": "2026-06-28T16:05:34.621163+00:00",
+  "artifact_path": "/Users/et/.bayesfolio/artifacts/features/portfolio_etf_macro_features_2026_05.parquet",
+  "output_dir": "/Users/et/Desktop/Data_Projects/gparchitect/experiments/2026-06-time-varying-parameterizations/outputs/20260628_gp_18etf_plain_roll60m_rank5_fixedtask_24w_botorchdefault",
+  "variants": [
+    {
+      "name": "plain",
+      "parameterization": "none",
+      "target": "none"
+    }
+  ],
+  "etf_universe": [
+    "BND",
+    "BNDX",
+    "EWX",
+    "HYEM",
+    "HYG",
+    "IEF",
+    "IJR",
+    "IWM",
+    "LQD",
+    "MGK",
+    "SPY",
+    "VEA",
+    "VNQ",
+    "VNQI",
+    "VSS",
+    "VTV",
+    "VWO",
+    "VWOB"
+  ],
+  "time_scale_params": {
+    "min": 0.0,
+    "max": 62.0,
+    "denom": 62.0
+  },
+  "windows": [
+    {
+      "train_end_date": "2024-03-29",
+      "forecast_date": "2024-04-30"
+    },
+    {
+      "train_end_date": "2024-04-30",
+      "forecast_date": "2024-05-31"
+    },
+    {
+      "train_end_date": "2024-05-31",
+      "forecast_date": "2024-06-28"
+    },
+    {
+      "train_end_date": "2024-06-28",
+      "forecast_date": "2024-07-31"
+    },
+    {
+      "train_end_date": "2024-07-31",
+      "forecast_date": "2024-08-30"
+    },
+    {
+      "train_end_date": "2024-08-30",
+      "forecast_date": "2024-09-30"
+    },
+    {
+      "train_end_date": "2024-09-30",
+      "forecast_date": "2024-10-31"
+    },
+    {
+      "train_end_date": "2024-10-31",
+      "forecast_date": "2024-11-29"
+    },
+    {
+      "train_end_date": "2024-11-29",
+      "forecast_date": "2024-12-31"
+    },
+    {
+      "train_end_date": "2024-12-31",
+      "forecast_date": "2025-01-31"
+    },
+    {
+      "train_end_date": "2025-01-31",
+      "forecast_date": "2025-02-28"
+    },
+    {
+      "train_end_date": "2025-02-28",
+      "forecast_date": "2025-03-31"
+    },
+    {
+      "train_end_date": "2025-03-31",
+      "forecast_date": "2025-04-30"
+    },
+    {
+      "train_end_date": "2025-04-30",
+      "forecast_date": "2025-05-30"
+    },
+    {
+      "train_end_date": "2025-05-30",
+      "forecast_date": "2025-06-30"
+    },
+    {
+      "train_end_date": "2025-06-30",
+      "forecast_date": "2025-07-31"
+    },
+    {
+      "train_end_date": "2025-07-31",
+      "forecast_date": "2025-08-29"
+    },
+    {
+      "train_end_date": "2025-08-29",
+      "forecast_date": "2025-09-30"
+    },
+    {
+      "train_end_date": "2025-09-30",
+      "forecast_date": "2025-10-31"
+    },
+    {
+      "train_end_date": "2025-10-31",
+      "forecast_date": "2025-11-28"
+    },
+    {
+      "train_end_date": "2025-11-28",
+      "forecast_date": "2025-12-31"
+    },
+    {
+      "train_end_date": "2025-12-31",
+      "forecast_date": "2026-01-30"
+    },
+    {
+      "train_end_date": "2026-01-30",
+      "forecast_date": "2026-02-27"
+    },
+    {
+      "train_end_date": "2026-02-27",
+      "forecast_date": "2026-03-31"
+    }
+  ],
+  "last_n_windows": 24,
+  "max_iter": null,
+  "botorch_default_optimizer": true,
+  "rank": 5,
+  "train_window_months": 60,
+  "git": {
+    "commit": "08f5bbfcc5d610e093d1d33ab8c2cb2a94d50385",
+    "status_short": "?? experiments/2026-06-time-varying-parameterizations/data/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260624_tvp_smoke_2w_iter15/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260624_tvp_smoke_2w_iter15_v2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260624_tvp_smoke_2w_iter15_v3/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_tvls_24w_iter15/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_tvls_plain_vs_spline3_24w_iter100/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_optuna_24w_trials200_pairwise_fixed150_tight/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_optuna_24w_trials200_pairwise_fixed80_tight/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_optuna_24w_trials200_pairwise_only/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_optuna_24w_trials200_rankmap/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_optuna_24w_trials200_rankmap_binary/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_optuna_24w_trials50/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_optuna_24w_trials50_v2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_ranker_smoke_2w_trials2_v2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_24w_trials200_COMPARISON.md\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_24w_trials200_base/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_24w_trials200_comparison.csv\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_24w_trials200_full_tree/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_24w_trials200_xsec/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_24w_trials200_xsec_lag/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_24w_trials200_xsec_regime/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260625_xgb_tree_features_smoke_2w_trials2_xsec/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_18etf_full_tree_multiobjective_cv_trials60_seeds01/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_18etf_full_tree_multiobjective_tpe_wide_trials500_seeds01/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_18etf_mo_tpe_wide_smoke_trials2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_18etf_multiobjective_cv_smoke_trials2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_18etf_multiobjective_cv_smoke_trials2_v2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_cv_selected_full_tree_18etf_roll60m_24w/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_extended_5etf_full_tree_24w_trials200_aligned/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_extended_5etf_full_tree_latest_202604_trials200/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_extended_5etf_full_tree_smoke_2w_trials2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_extended_5etf_full_tree_strict_mom36_24w_trials200_aligned/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_extended_5etf_full_tree_strict_mom36_smoke_2w_trials2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_fixed_18etf_roll60m_report/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_fixed_full_tree_18etf_roll60m_24w/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_fixed_full_tree_18etf_roll60m_smoke_2w/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_fixed_xsec_18etf_roll60m_24w/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_full_tree_roll120m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_full_tree_roll36m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_full_tree_roll60m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_full_tree_roll60m_24w_trials200_seed1/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_full_tree_roll60m_24w_trials200_seed2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_full_tree_roll84m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_grid_report/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_xsec_roll120m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_xsec_roll36m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_xsec_roll60m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_pairwise_artifact_time_xsec_roll84m_24w_trials200_seed0/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_time_scale_artifact_smoke_2w_trials2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_time_scale_post_filter_smoke_1w_trials1/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260626_xgb_tpe500_selected_full_tree_18etf_roll60m_24w/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260627_regalpha0_lex_vs_hypervolume_oos_comparison.md\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_18etf_regalpha0_subcol60_tpe_wide_trials500_seeds01_hypervolume/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_18etf_regalpha0_subcol60_tpe_wide_trials500_seeds01_lex/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_regalpha0_hypervolume_selected_full_tree_18etf_roll60m_24w_oos/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_regalpha0_lex_selected_full_tree_18etf_roll60m_24w_oos/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_regalpha0_subcol60_hv_smoke_trials2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_regalpha0_subcol60_lex_smoke_trials2/\n?? experiments/2026-06-time-varying-parameterizations/outputs/20260628_gp_18etf_plain_roll60m_smoke_1w_iter1/\n?? experiments/2026-06-time-varying-parameterizations/outputs/logs/\n?? experiments/2026-06-time-varying-parameterizations/run_xgb_fixed_param_cv.py\n?? experiments/2026-06-time-varying-parameterizations/run_xgboost_ranker.py\n?? uv.lock"
+  }
+}

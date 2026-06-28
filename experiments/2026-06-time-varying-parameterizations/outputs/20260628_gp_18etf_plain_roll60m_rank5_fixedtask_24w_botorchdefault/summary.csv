@@ -1,0 +1,2 @@
+scope,model,ok_windows,failed_windows,mae,rmse,predictive_log_likelihood,interval_coverage_95,directional_accuracy,mean_pred_std,mean_window_spearman,long_short_top1_bottom1_mean
+multitask,plain,24,0,0.02469276843828142,0.03127745355974364,2.0909504920623645,0.9837962962962963,0.5254629629629629,0.03980296558710858,0.18145854833161335,0.016754638889396437

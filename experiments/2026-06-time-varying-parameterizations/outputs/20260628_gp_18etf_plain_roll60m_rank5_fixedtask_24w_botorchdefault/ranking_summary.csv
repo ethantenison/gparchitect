@@ -1,0 +1,2 @@
+profile,mean_window_spearman,long_short_top1_bottom1_mean,top1_hit_rate,top3_contains_true_top1,top3_overlap
+18-ETF true-task multitask GP rank5,0.1814585483316133,0.0167546388893964,0.375,0.375,0.2916666666666667
