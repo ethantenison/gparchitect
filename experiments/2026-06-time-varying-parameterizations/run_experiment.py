@@ -191,6 +191,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--run-id", type=str, default=None)
     parser.add_argument("--last-n-windows", type=int, default=3)
     parser.add_argument("--max-iter", type=int, default=25)
+    parser.add_argument(
+        "--botorch-default-optimizer",
+        action="store_true",
+        help="Call fit_gpytorch_mll without explicit optimizer options, matching BayesFolio monthly GP fits.",
+    )
     parser.add_argument("--rank", type=int, default=3)
     parser.add_argument("--etf-universe", nargs="+", default=ETF_UNIVERSE)
     parser.add_argument("--train-window-months", type=int, default=None)
@@ -482,7 +487,7 @@ def build_single_task_kernel(variant: Variant, input_dim: int) -> Any:
 
 
 def fit_single_task(
-    train_x: torch.Tensor, train_y: torch.Tensor, test_x: torch.Tensor, variant: Variant, max_iter: int
+    train_x: torch.Tensor, train_y: torch.Tensor, test_x: torch.Tensor, variant: Variant, max_iter: int | None
 ) -> tuple[np.ndarray, np.ndarray, torch.nn.Module]:
     set_seed()
     noise_prior = LogNormalPrior(loc=-4.0, scale=1.0)
@@ -498,7 +503,10 @@ def fit_single_task(
     )
     model.train()
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
-    fit_gpytorch_mll(mll, options={"maxiter": max_iter})
+    if max_iter is None:
+        fit_gpytorch_mll(mll)
+    else:
+        fit_gpytorch_mll(mll, options={"maxiter": max_iter})
     model.eval()
     model.likelihood.eval()
     with torch.no_grad():
@@ -508,7 +516,7 @@ def fit_single_task(
     return pred_mean, pred_std, model
 
 
-def run_fake_data(variants: list[Variant], output_dir: Path, max_iter: int) -> tuple[pd.DataFrame, pd.DataFrame]:
+def run_fake_data(variants: list[Variant], output_dir: Path, max_iter: int | None) -> tuple[pd.DataFrame, pd.DataFrame]:
     rows: list[dict[str, Any]] = []
     curves: list[dict[str, Any]] = []
     t = np.linspace(0.0, 1.0, 72)
@@ -606,7 +614,7 @@ def run_spy(
     variants: list[Variant],
     windows: list[tuple[str, str]],
     output_dir: Path,
-    max_iter: int,
+    max_iter: int | None,
     *,
     train_window_months: int | None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -767,7 +775,12 @@ def build_outcome_transform(train_x: torch.Tensor, train_y: torch.Tensor) -> Any
 
 
 def fit_multitask(
-    train_x: torch.Tensor, train_y: torch.Tensor, test_x: torch.Tensor, variant: Variant, rank: int, max_iter: int
+    train_x: torch.Tensor,
+    train_y: torch.Tensor,
+    test_x: torch.Tensor,
+    variant: Variant,
+    rank: int,
+    max_iter: int | None,
 ) -> tuple[np.ndarray, np.ndarray, torch.nn.Module]:
     set_seed()
     covar_config = build_multitask_config()
@@ -788,7 +801,10 @@ def fit_multitask(
         model.covar_module.kernels[0] = wrap_kernel(data_kernel, variant, time_feature_index=0)
     model.train()
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
-    fit_gpytorch_mll(mll, options={"maxiter": max_iter})
+    if max_iter is None:
+        fit_gpytorch_mll(mll)
+    else:
+        fit_gpytorch_mll(mll, options={"maxiter": max_iter})
     model.eval()
     model.likelihood.eval()
     with torch.no_grad():
@@ -804,7 +820,7 @@ def run_multitask(
     windows: list[tuple[str, str]],
     output_dir: Path,
     rank: int,
-    max_iter: int,
+    max_iter: int | None,
     *,
     train_window_months: int | None,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
@@ -1057,7 +1073,7 @@ def write_report(
         "",
         f"- ETF universe: `{', '.join(manifest['etf_universe'])}`",
         f"- Windows: `{manifest['windows']}`",
-        f"- Max optimizer iterations: `{manifest['max_iter']}`",
+        f"- Max optimizer iterations: `{manifest['max_iter'] if manifest['max_iter'] is not None else 'BoTorch default'}`",
         f"- Multitask rank: `{manifest['rank']}`",
         f"- Train window months: `{manifest['train_window_months']}`",
         "- Changepoint kernels: excluded by design.",
@@ -1172,7 +1188,7 @@ Interpretation rule: treat this as an evidence-gathering run, not an automatic p
 - ETF universe: `{", ".join(ETF_UNIVERSE)}`
 - Variants: `{variants}`
 - Windows: `{manifest["last_n_windows"]}`
-- Max optimizer iterations: `{manifest["max_iter"]}`
+- Max optimizer iterations: `{manifest["max_iter"] if manifest["max_iter"] is not None else "BoTorch default"}`
 - Multitask rank: `{manifest["rank"]}`
 - Feature artifact: `{manifest["artifact_path"]}`
 - Changepoint and TVOS variants: excluded by design for this run
@@ -1267,6 +1283,7 @@ def main() -> None:
     output_dir = args.output_root / run_id
     (output_dir / "plots").mkdir(parents=True, exist_ok=True)
     selected = [v for v in VARIANTS if v.name in set(args.variants)]
+    optimizer_max_iter = None if args.botorch_default_optimizer else args.max_iter
 
     panel_raw = load_panel(args.artifact_path, args.etf_universe)
     panel, time_scale_params = apply_global_time_minmax(panel_raw)
@@ -1282,7 +1299,8 @@ def main() -> None:
         "time_scale_params": time_scale_params,
         "windows": [{"train_end_date": t, "forecast_date": f} for t, f in windows],
         "last_n_windows": args.last_n_windows,
-        "max_iter": args.max_iter,
+        "max_iter": optimizer_max_iter,
+        "botorch_default_optimizer": args.botorch_default_optimizer,
         "rank": args.rank,
         "train_window_months": args.train_window_months,
         "git": git_info(),
@@ -1294,7 +1312,7 @@ def main() -> None:
     multitask_preds = multitask_metrics = multitask_curves = None
 
     if not args.skip_fake:
-        fake_metrics, fake_curves = run_fake_data(selected, output_dir, args.max_iter)
+        fake_metrics, fake_curves = run_fake_data(selected, output_dir, optimizer_max_iter)
         plot_modulation(fake_curves, "fake", output_dir)
     if not args.skip_spy:
         spy_preds, spy_metrics, spy_curves = run_spy(
@@ -1302,7 +1320,7 @@ def main() -> None:
             selected,
             windows,
             output_dir,
-            args.max_iter,
+            optimizer_max_iter,
             train_window_months=args.train_window_months,
         )
         plot_predictions(spy_preds, "spy", output_dir)
@@ -1314,7 +1332,7 @@ def main() -> None:
             windows,
             output_dir,
             args.rank,
-            args.max_iter,
+            optimizer_max_iter,
             train_window_months=args.train_window_months,
         )
         plot_predictions(multitask_preds, "multitask", output_dir)
