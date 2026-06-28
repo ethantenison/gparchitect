@@ -31,6 +31,8 @@ This is not a clean final same-universe promotion claim. The GP evidence summari
 
 The strongest next check, if we need publication-quality evidence, is a sealed 18-ETF multitask GP run over the same `2024-04-30` through `2026-03-31` OOS window and the same feature artifact. Until then, I would not spend more cycles tuning XGB unless it is only to maintain a baseline.
 
+Update: that clean 18-ETF plain multitask GP run now exists at `outputs/20260628_gp_18etf_plain_roll60m_24w_iter15/`. It weakens the GP-positive claim: the 18-ETF plain GP has better top1 hit rate than the XGB profiles, but the lexicographic XGB has higher mean IC and the prior reg-alpha-tuned XGB has higher spread/top3 containment. Treat this note as pre-check context; use the 18-ETF run report for the same-universe readout.
+
 ## Critic Pass
 
 Strongest reason this conclusion could be wrong: the GP and XGB evidence are not perfectly matched by universe size, and a 5-ETF top1 hit rate is easier to interpret than an 18-ETF top1 hit rate. The conclusion survives as a resource-allocation decision because multiple XGB variants have now failed to produce compelling sealed-OOS ranking behavior, but it should not be oversold as a same-universe benchmark.
