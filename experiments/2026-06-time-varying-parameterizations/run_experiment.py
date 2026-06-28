@@ -771,8 +771,6 @@ def fit_multitask(
 ) -> tuple[np.ndarray, np.ndarray, torch.nn.Module]:
     set_seed()
     covar_config = build_multitask_config()
-    covar_module = build_covar_module(covar_config, batch_shape=train_x.shape[:-2])
-    covar_module = wrap_kernel(covar_module, variant, time_feature_index=0)
     model = build_multitask_gp(
         train_X=train_x,
         train_Y=train_y,
@@ -785,7 +783,9 @@ def fit_multitask(
         input_transform=None,
         task_covar_prior=None,
     )
-    model.covar_module = covar_module
+    if variant.target != "none":
+        data_kernel = build_covar_module(covar_config, batch_shape=train_x.shape[:-2])
+        model.covar_module.kernels[0] = wrap_kernel(data_kernel, variant, time_feature_index=0)
     model.train()
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_gpytorch_mll(mll, options={"maxiter": max_iter})

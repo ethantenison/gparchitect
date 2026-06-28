@@ -1,0 +1,2 @@
+scope,status,message,model,train_end_date,forecast_date,train_rows,test_rows,task_count,n,mae,rmse,predictive_log_likelihood,interval_coverage_95,directional_accuracy,mean_pred_std,mean_window_spearman,long_short_top1_bottom1_mean
+multitask,ok,,plain,2026-02-27,2026-03-31,1080,18,18,18,0.05599997420432339,0.07037267769166533,1.3408145045312532,0.7777777777777778,0.9444444444444444,0.03893742879620712,0.78328173374613,0.1402658545168587

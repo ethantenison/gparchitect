@@ -8,6 +8,8 @@ Stop active XGBoost ranker exploration for now. Keep XGBoost as a benchmark fami
 
 The practical reason is that the current XGB evidence does not beat the GP-style ranking signal on the decision metrics we care about. The modeling reason is also coherent: ICC-style monthly ETF ranking is about the joint cross-sectional distribution, and the multitask GP models that dependency directly instead of forcing each month into an independent tree-ranking problem.
 
+Post-run caveat: later runner inspection found the `gparchitect` GP comparison path dropped BoTorch's task covariance kernel after model construction. The committed 18-ETF GP artifact is therefore a GP-style baseline with the recorded rank ineffective, not a valid task-covariance-rank multitask GP benchmark. A fixed one-window rank-5 smoke is tracked separately and the full fixed-task run needs a larger runtime budget.
+
 ## Evidence
 
 | profile | universe | windows | IC / mean Spearman | spread / top1-bottom1 | top1 hit |
@@ -35,7 +37,7 @@ Update: that clean 18-ETF plain multitask GP run now exists at `outputs/20260628
 
 ## Critic Pass
 
-Strongest reason this conclusion could be wrong: the GP and XGB evidence are not perfectly matched by universe size, and a 5-ETF top1 hit rate is easier to interpret than an 18-ETF top1 hit rate. The conclusion survives as a resource-allocation decision because multiple XGB variants have now failed to produce compelling sealed-OOS ranking behavior, but it should not be oversold as a same-universe benchmark.
+Strongest reason this conclusion could be wrong: the GP and XGB evidence are not perfectly matched by universe size, a 5-ETF top1 hit rate is easier to interpret than an 18-ETF top1 hit rate, and the latest `gparchitect` GP artifact dropped the task covariance kernel. The conclusion survives only as a weak resource-allocation decision because multiple XGB variants have failed to produce compelling sealed-OOS ranking behavior; it should not be oversold as a same-universe true multitask GP benchmark.
 
 ## Lineage
 

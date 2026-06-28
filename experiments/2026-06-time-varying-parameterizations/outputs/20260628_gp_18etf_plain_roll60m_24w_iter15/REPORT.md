@@ -9,6 +9,8 @@ Does the plain multitask GP still look better than the XGB ranker family when ev
 
 ## Decision Readout
 
+Post-run caveat: this artifact should be treated as a rank-insensitive GP-style baseline, not a valid task-covariance-rank-3 multitask GP. A later inspection found the runner replaced BoTorch's `ProductKernel(data, task)` with the data kernel alone after model construction, dropping the `PositiveIndexKernel` task covariance and making the recorded `rank` ineffective.
+
 The clean same-universe result is mixed, not a GP victory lap.
 
 The 18-ETF plain multitask GP beats the newest XGB runs on top1 hit rate, ties the reg-alpha-zero lexicographic XGB on top3 containment, and has positive top-bottom spread. But it does not beat the strongest XGB readouts on mean IC/spread: the lexicographic XGB has higher IC, and the prior reg-alpha-tuned XGB has higher spread and top3 containment.
@@ -23,7 +25,7 @@ I would still stop wide XGB exploration for now, but the reason is weaker after 
 - Failures: `0`
 - Train window: rolling `60` months
 - Max optimizer iterations: `15`
-- Multitask rank: `3`
+- Multitask rank: `3` recorded, but ineffective in this artifact because the task covariance kernel was dropped after model construction.
 - Variant: `plain`
 - Feature artifact: `/Users/et/.bayesfolio/artifacts/features/portfolio_etf_macro_features_2026_05.parquet`
 
@@ -60,7 +62,7 @@ I would still stop wide XGB exploration for now, but the reason is weaker after 
 
 ## Critic Pass
 
-Strongest reason the GP-positive story could be wrong: the clean 18-ETF plain GP run loses mean IC to the lexicographic XGB and loses spread/top3 containment to the prior reg-alpha-tuned XGB. The evidence is not strong enough to claim plain multitask GP dominates XGB on the same sealed 18-ETF ranking task.
+Strongest reason the GP-positive story could be wrong: this artifact did not preserve the task covariance kernel, so it is not a clean true multitask GP rank comparison. Even on its own terms, the clean 18-ETF plain GP run loses mean IC to the lexicographic XGB and loses spread/top3 containment to the prior reg-alpha-tuned XGB. The evidence is not strong enough to claim plain multitask GP dominates XGB on the same sealed 18-ETF ranking task.
 
 Strongest reason not to reopen XGB exploration anyway: the XGB edge is not robust across selection strategies, top1 behavior remains weak, and the gains are not decisive over only 24 monthly windows. A better next GP-side check is a stronger multitask GP variant, not more XGB search.
 
