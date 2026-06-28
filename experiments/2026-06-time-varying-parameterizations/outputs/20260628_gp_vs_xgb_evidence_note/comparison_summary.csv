@@ -1,0 +1,5 @@
+profile,scope,universe_n,windows,ic_or_mean_window_spearman,spread_or_long_short_top1_bottom1,top1_hit_rate,notes
+plain_multitask_gp,forecast_baseline,5,24,0.2583333333333333,0.0200998154897572,0.375,"Plain multitask GP baseline from 20260625_tvls_24w_iter15; joint task distribution modeled directly."
+xgb_regalpha0_lexicographic,sealed_oos_ranker,18,24,0.16568322578682293,-0.0027241944884425773,0.125,"Reg-alpha-zero wide search selected by feasible lexicographic Pareto rule."
+xgb_regalpha0_hypervolume,sealed_oos_ranker,18,24,0.12564499484004127,0.006622418506195156,0.0,"Reg-alpha-zero wide search selected by hypervolume-balanced rule."
+xgb_prior_tpe500_regalpha_tuned,sealed_oos_ranker,18,24,0.1658,0.0142,0.125,"Prior 500-trial XGB profile with searched reg_alpha; included as XGB family reference from 20260627_regalpha0_lex_vs_hypervolume_oos_comparison.md."

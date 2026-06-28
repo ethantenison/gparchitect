@@ -1,0 +1,33 @@
+{
+  "schema": "gparchitect.gp_vs_xgb_evidence_note.v1",
+  "run_id": "20260628_gp_vs_xgb_evidence_note",
+  "created_at_local": "2026-06-28T08:35:00-05:00",
+  "question": "Should active exploration of XGBoost rankers stop because the multitask GP appears better for ICC-style cross-sectional ranking?",
+  "artifact_kind": "tracked_evidence_note",
+  "source_runs": {
+    "plain_multitask_gp": "experiments/2026-06-time-varying-parameterizations/outputs/20260625_tvls_24w_iter15",
+    "xgb_regalpha0_lexicographic_oos": "experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_regalpha0_lex_selected_full_tree_18etf_roll60m_24w_oos",
+    "xgb_regalpha0_hypervolume_oos": "experiments/2026-06-time-varying-parameterizations/outputs/20260627_xgb_regalpha0_hypervolume_selected_full_tree_18etf_roll60m_24w_oos",
+    "xgb_regalpha0_family_comparison": "experiments/2026-06-time-varying-parameterizations/outputs/20260627_regalpha0_lex_vs_hypervolume_oos_comparison.md"
+  },
+  "data_artifacts": {
+    "gp_feature_artifact": "/Users/et/.bayesfolio/artifacts/features/portfolio_etf_macro_features_2026_05.parquet",
+    "xgb_feature_artifact": "/Users/et/.bayesfolio/artifacts/features/portfolio_etf_macro_features_2026_05.parquet"
+  },
+  "metrics": {
+    "primary": "mean_window_spearman / IC",
+    "secondary": [
+      "long_short_top1_bottom1_mean / spread",
+      "top1_hit_rate",
+      "top3 containment where available"
+    ]
+  },
+  "known_limitations": [
+    "The GP summary is from a 5-ETF multitask run while the newest XGB sealed-OOS runs use an 18-ETF universe.",
+    "Only 24 monthly OOS windows are available.",
+    "This is a synthesis note, not a new model fit."
+  ],
+  "git": {
+    "base_commit": "3f40e64760a6e240eac69f480bb4fd9cdcf2b26e"
+  }
+}
