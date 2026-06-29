@@ -1,0 +1,2 @@
+profile,mean_window_spearman,long_short_top1_bottom1_mean,top1_hit_rate,top3_contains_true_top1,top3_overlap
+signed_no_prior,0.15729274165806675,0.011247471940939113,0.3333333333333333,0.3333333333333333,0.2638888888888889

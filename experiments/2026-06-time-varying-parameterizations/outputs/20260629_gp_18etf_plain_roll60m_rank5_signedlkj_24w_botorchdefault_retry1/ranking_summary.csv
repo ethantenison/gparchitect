@@ -1,0 +1,2 @@
+profile,mean_window_spearman,long_short_top1_bottom1_mean,top1_hit_rate,top3_contains_true_top1,top3_overlap
+signed_lkj_eta_2,0.1176470588235294,0.015345612941652343,0.4166666666666667,0.4166666666666667,0.2916666666666667

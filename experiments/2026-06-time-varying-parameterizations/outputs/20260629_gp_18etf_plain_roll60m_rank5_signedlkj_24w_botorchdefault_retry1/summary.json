@@ -1,0 +1,16 @@
+[
+  {
+    "scope": "multitask",
+    "model": "plain",
+    "ok_windows": 24,
+    "failed_windows": 0,
+    "mae": 0.02546021837488659,
+    "rmse": 0.03189937739201965,
+    "predictive_log_likelihood": 2.0758059271817886,
+    "interval_coverage_95": 0.898148148148148,
+    "directional_accuracy": 0.44675925925925924,
+    "mean_pred_std": 0.025790409331587216,
+    "mean_window_spearman": 0.1176470588235294,
+    "long_short_top1_bottom1_mean": 0.015345612941652343
+  }
+]
