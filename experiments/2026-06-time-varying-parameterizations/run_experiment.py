@@ -199,10 +199,11 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--rank", type=int, default=3)
     parser.add_argument(
         "--task-kernel",
-        choices=["positive", "signed_lkj_eta_2"],
+        choices=["positive", "signed_no_prior", "signed_lkj_eta_2"],
         default="positive",
         help=(
             "Task covariance kernel. 'positive' keeps BoTorch PositiveIndexKernel; "
+            "'signed_no_prior' replaces it with GPyTorch IndexKernel without a prior; "
             "'signed_lkj_eta_2' replaces it with GPyTorch IndexKernel + LKJCovariancePrior(eta=2.0)."
         ),
     )
@@ -809,8 +810,12 @@ def fit_multitask(
     if variant.target != "none":
         data_kernel = build_covar_module(covar_config, batch_shape=train_x.shape[:-2])
         model.covar_module.kernels[0] = wrap_kernel(data_kernel, variant, time_feature_index=0)
-    if task_kernel == "signed_lkj_eta_2":
-        replace_with_signed_lkj_index_kernel(model, rank=rank, eta=2.0)
+    if task_kernel == "signed_no_prior":
+        replace_with_signed_index_kernel(model, rank=rank, prior=None)
+    elif task_kernel == "signed_lkj_eta_2":
+        sd_prior = LogNormalPrior(loc=0.0, scale=0.5)
+        task_prior = LKJCovariancePrior(n=model.num_tasks, eta=2.0, sd_prior=sd_prior)
+        replace_with_signed_index_kernel(model, rank=rank, prior=task_prior)
     model.train()
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     fit_kwargs: dict[str, Any] = {}
@@ -834,8 +839,8 @@ def fit_multitask(
     return pred_mean, pred_std, model
 
 
-def replace_with_signed_lkj_index_kernel(model: torch.nn.Module, *, rank: int, eta: float) -> None:
-    """Replace BoTorch's PositiveIndexKernel with a signed IndexKernel + LKJ prior.
+def replace_with_signed_index_kernel(model: torch.nn.Module, *, rank: int, prior: Any | None) -> None:
+    """Replace BoTorch's PositiveIndexKernel with a signed GPyTorch IndexKernel.
 
     BayesFolio's earlier task-covariance experiments used this path as the
     regular/signed task kernel alternative to PositiveIndexKernel.
@@ -844,12 +849,10 @@ def replace_with_signed_lkj_index_kernel(model: torch.nn.Module, *, rank: int, e
     task_feature = getattr(model, "_task_feature", None)
     if task_feature is None:
         task_feature = -1
-    sd_prior = LogNormalPrior(loc=0.0, scale=0.5)
-    task_prior = LKJCovariancePrior(n=model.num_tasks, eta=eta, sd_prior=sd_prior)
     signed_task_kernel = IndexKernel(
         num_tasks=model.num_tasks,
         rank=rank,
-        prior=task_prior,
+        prior=prior,
         active_dims=[task_feature],
     )
     model.covar_module = data_kernel * signed_task_kernel
@@ -1359,6 +1362,8 @@ def main() -> None:
         "task_kernel_details": (
             "BoTorch PositiveIndexKernel with task_covar_prior=None"
             if args.task_kernel == "positive"
+            else "GPyTorch IndexKernel with prior=None"
+            if args.task_kernel == "signed_no_prior"
             else "GPyTorch IndexKernel with LKJCovariancePrior(eta=2.0) and LogNormalPrior(0.0, 0.5) task SD prior"
         ),
         "train_window_months": args.train_window_months,

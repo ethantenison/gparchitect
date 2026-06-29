@@ -55,3 +55,23 @@ Smoke result:
 - RMSE: `0.0702`
 
 Interpret the smoke as a construction and fit-path check only. It is not evidence that signed LKJ is better or worse than the positive task kernel.
+
+## Signed No-Prior Follow-Up
+
+Purpose: repeat the same sealed run with the BayesFolio `signed_no_prior` task-kernel variant. This uses the same signed GPyTorch `IndexKernel` as the LKJ variant, but with `prior=None`.
+
+Full repeat command:
+
+```bash
+uv run python experiments/2026-06-time-varying-parameterizations/run_experiment.py \
+  --run-id 20260629_gp_18etf_plain_roll60m_rank5_signednoprior_24w_botorchdefault \
+  --last-n-windows 24 \
+  --botorch-default-optimizer \
+  --rank 5 \
+  --task-kernel signed_no_prior \
+  --etf-universe BND BNDX EWX HYEM HYG IEF IJR IWM LQD MGK SPY VEA VNQ VNQI VSS VTV VWO VWOB \
+  --train-window-months 60 \
+  --variants plain \
+  --skip-fake \
+  --skip-spy
+```
