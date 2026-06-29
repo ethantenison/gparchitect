@@ -20,10 +20,10 @@ from botorch.fit import fit_gpytorch_mll
 from botorch.models import SingleTaskGP
 from botorch.models.transforms.outcome import Standardize, StratifiedStandardize
 from gpytorch.constraints import GreaterThan
-from gpytorch.kernels import MaternKernel
+from gpytorch.kernels import IndexKernel, MaternKernel
 from gpytorch.likelihoods import GaussianLikelihood
 from gpytorch.mlls import ExactMarginalLogLikelihood
-from gpytorch.priors import LogNormalPrior
+from gpytorch.priors import LKJCovariancePrior, LogNormalPrior
 from scipy.stats import spearmanr
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -197,6 +197,15 @@ def parse_args() -> argparse.Namespace:
         help="Call fit_gpytorch_mll without explicit optimizer options, matching BayesFolio monthly GP fits.",
     )
     parser.add_argument("--rank", type=int, default=3)
+    parser.add_argument(
+        "--task-kernel",
+        choices=["positive", "signed_lkj_eta_2"],
+        default="positive",
+        help=(
+            "Task covariance kernel. 'positive' keeps BoTorch PositiveIndexKernel; "
+            "'signed_lkj_eta_2' replaces it with GPyTorch IndexKernel + LKJCovariancePrior(eta=2.0)."
+        ),
+    )
     parser.add_argument("--etf-universe", nargs="+", default=ETF_UNIVERSE)
     parser.add_argument("--train-window-months", type=int, default=None)
     parser.add_argument("--variants", nargs="*", default=[v.name for v in VARIANTS], choices=[v.name for v in VARIANTS])
@@ -506,7 +515,7 @@ def fit_single_task(
     if max_iter is None:
         fit_gpytorch_mll(mll)
     else:
-        fit_gpytorch_mll(mll, options={"maxiter": max_iter})
+        fit_gpytorch_mll(mll, optimizer_kwargs={"options": {"maxiter": max_iter}})
     model.eval()
     model.likelihood.eval()
     with torch.no_grad():
@@ -781,6 +790,7 @@ def fit_multitask(
     variant: Variant,
     rank: int,
     max_iter: int | None,
+    task_kernel: str,
 ) -> tuple[np.ndarray, np.ndarray, torch.nn.Module]:
     set_seed()
     covar_config = build_multitask_config()
@@ -799,12 +809,19 @@ def fit_multitask(
     if variant.target != "none":
         data_kernel = build_covar_module(covar_config, batch_shape=train_x.shape[:-2])
         model.covar_module.kernels[0] = wrap_kernel(data_kernel, variant, time_feature_index=0)
+    if task_kernel == "signed_lkj_eta_2":
+        replace_with_signed_lkj_index_kernel(model, rank=rank, eta=2.0)
     model.train()
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
     if max_iter is None:
         fit_gpytorch_mll(mll)
     else:
-        fit_gpytorch_mll(mll, options={"maxiter": max_iter})
+        fit_kwargs: dict[str, Any] = {"optimizer_kwargs": {"options": {"maxiter": max_iter}}}
+        if task_kernel == "signed_lkj_eta_2":
+            # IndexKernel's LKJ prior has no setter closure in GPyTorch, so BoTorch's
+            # retry path cannot resample it after an optimizer warning.
+            fit_kwargs["max_attempts"] = 1
+        fit_gpytorch_mll(mll, **fit_kwargs)
     model.eval()
     model.likelihood.eval()
     with torch.no_grad():
@@ -812,6 +829,27 @@ def fit_multitask(
         pred_mean = posterior.mean.squeeze(-1).detach().cpu().numpy()
         pred_std = posterior.variance.squeeze(-1).clamp_min(0.0).sqrt().detach().cpu().numpy()
     return pred_mean, pred_std, model
+
+
+def replace_with_signed_lkj_index_kernel(model: torch.nn.Module, *, rank: int, eta: float) -> None:
+    """Replace BoTorch's PositiveIndexKernel with a signed IndexKernel + LKJ prior.
+
+    BayesFolio's earlier task-covariance experiments used this path as the
+    regular/signed task kernel alternative to PositiveIndexKernel.
+    """
+    data_kernel = model.covar_module.kernels[0]
+    task_feature = getattr(model, "_task_feature", None)
+    if task_feature is None:
+        task_feature = -1
+    sd_prior = LogNormalPrior(loc=0.0, scale=0.5)
+    task_prior = LKJCovariancePrior(n=model.num_tasks, eta=eta, sd_prior=sd_prior)
+    signed_task_kernel = IndexKernel(
+        num_tasks=model.num_tasks,
+        rank=rank,
+        prior=task_prior,
+        active_dims=[task_feature],
+    )
+    model.covar_module = data_kernel * signed_task_kernel
 
 
 def run_multitask(
@@ -823,6 +861,7 @@ def run_multitask(
     max_iter: int | None,
     *,
     train_window_months: int | None,
+    task_kernel: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     pred_rows: list[pd.DataFrame] = []
     metric_rows: list[dict[str, Any]] = []
@@ -853,7 +892,15 @@ def run_multitask(
                 dtype=torch.float64,
             )
             try:
-                pred_mean, pred_std, model = fit_multitask(train_x, train_y, test_x, variant, rank, max_iter)
+                pred_mean, pred_std, model = fit_multitask(
+                    train_x,
+                    train_y,
+                    test_x,
+                    variant,
+                    rank,
+                    max_iter,
+                    task_kernel,
+                )
                 y_params = scale_params["y_excess_lead"]
                 preds = (
                     test_df[["date", "asset_id", "y_excess_lead"]].rename(columns={"y_excess_lead": "y_true"}).copy()
@@ -1075,6 +1122,8 @@ def write_report(
         f"- Windows: `{manifest['windows']}`",
         f"- Max optimizer iterations: `{manifest['max_iter'] if manifest['max_iter'] is not None else 'BoTorch default'}`",
         f"- Multitask rank: `{manifest['rank']}`",
+        f"- Task kernel: `{manifest['task_kernel']}`",
+        f"- Task kernel details: `{manifest['task_kernel_details']}`",
         f"- Train window months: `{manifest['train_window_months']}`",
         "- Changepoint kernels: excluded by design.",
         "",
@@ -1190,6 +1239,7 @@ Interpretation rule: treat this as an evidence-gathering run, not an automatic p
 - Windows: `{manifest["last_n_windows"]}`
 - Max optimizer iterations: `{manifest["max_iter"] if manifest["max_iter"] is not None else "BoTorch default"}`
 - Multitask rank: `{manifest["rank"]}`
+- Task kernel: `{manifest["task_kernel"]}`
 - Feature artifact: `{manifest["artifact_path"]}`
 - Changepoint and TVOS variants: excluded by design for this run
 
@@ -1302,6 +1352,12 @@ def main() -> None:
         "max_iter": optimizer_max_iter,
         "botorch_default_optimizer": args.botorch_default_optimizer,
         "rank": args.rank,
+        "task_kernel": args.task_kernel,
+        "task_kernel_details": (
+            "BoTorch PositiveIndexKernel with task_covar_prior=None"
+            if args.task_kernel == "positive"
+            else "GPyTorch IndexKernel with LKJCovariancePrior(eta=2.0) and LogNormalPrior(0.0, 0.5) task SD prior"
+        ),
         "train_window_months": args.train_window_months,
         "git": git_info(),
     }
@@ -1334,6 +1390,7 @@ def main() -> None:
             args.rank,
             optimizer_max_iter,
             train_window_months=args.train_window_months,
+            task_kernel=args.task_kernel,
         )
         plot_predictions(multitask_preds, "multitask", output_dir)
         plot_multitask_windows(multitask_metrics, output_dir, universe_size=len(args.etf_universe))
