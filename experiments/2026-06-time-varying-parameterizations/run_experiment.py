@@ -18,6 +18,7 @@ import pandas as pd
 import torch
 from botorch.fit import fit_gpytorch_mll
 from botorch.models import SingleTaskGP
+from botorch.models.transforms.input import Normalize
 from botorch.models.transforms.outcome import Standardize, StratifiedStandardize
 from gpytorch.constraints import GreaterThan
 from gpytorch.kernels import IndexKernel, MaternKernel
@@ -205,6 +206,17 @@ def parse_args() -> argparse.Namespace:
             "Task covariance kernel. 'positive' keeps BoTorch PositiveIndexKernel; "
             "'signed_no_prior' replaces it with GPyTorch IndexKernel without a prior; "
             "'signed_lkj_eta_2' replaces it with GPyTorch IndexKernel + LKJCovariancePrior(eta=2.0)."
+        ),
+    )
+    parser.add_argument(
+        "--scaling",
+        choices=["manual_zscore", "botorch_normalize"],
+        default="manual_zscore",
+        help=(
+            "Multitask GP scaling policy. 'manual_zscore' preserves the original runner behavior: global "
+            "time min-max plus rolling train-window z-score for ETF/macro inputs and target. "
+            "'botorch_normalize' matches BayesFolio: raw non-task inputs are passed through BoTorch Normalize, "
+            "the task feature is excluded, and the target is handled only by StratifiedStandardize."
         ),
     )
     parser.add_argument("--etf-universe", nargs="+", default=ETF_UNIVERSE)
@@ -792,6 +804,7 @@ def fit_multitask(
     rank: int,
     max_iter: int | None,
     task_kernel: str,
+    scaling: str,
 ) -> tuple[np.ndarray, np.ndarray, torch.nn.Module]:
     set_seed()
     covar_config = build_multitask_config()
@@ -804,7 +817,11 @@ def fit_multitask(
         rank=rank,
         min_inferred_noise_level=5e-3,
         outcome_transform=build_outcome_transform(train_x, train_y),
-        input_transform=None,
+        input_transform=(
+            Normalize(d=train_x.shape[-1], indices=list(range(len(MULTITASK_INPUT_COLUMNS))))
+            if scaling == "botorch_normalize"
+            else None
+        ),
         task_covar_prior=None,
     )
     if variant.target != "none":
@@ -868,6 +885,7 @@ def run_multitask(
     *,
     train_window_months: int | None,
     task_kernel: str,
+    scaling: str,
 ) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     pred_rows: list[pd.DataFrame] = []
     metric_rows: list[dict[str, Any]] = []
@@ -880,9 +898,16 @@ def run_multitask(
             test_df = panel.loc[(panel["date"] == forecast_date) & panel["y_excess_lead"].notna()].copy()
             if test_df.empty:
                 continue
-            train_scaled, test_scaled, scale_params = standard_scale(
-                train_df, test_df, [*ETF_COLS, *MACRO_COLS, "y_excess_lead"]
-            )
+            if scaling == "manual_zscore":
+                train_scaled, test_scaled, scale_params = standard_scale(
+                    train_df, test_df, [*ETF_COLS, *MACRO_COLS, "y_excess_lead"]
+                )
+            elif scaling == "botorch_normalize":
+                train_scaled = train_df.copy()
+                test_scaled = test_df.copy()
+                scale_params = {}
+            else:
+                raise ValueError(f"Unsupported scaling mode: {scaling}")
             train_x, train_y, task_map = prepare_multitask_gp_data_with_task_feature(
                 train_scaled[[*MULTITASK_INPUT_COLUMNS, "asset_id", "y_excess_lead"]],
                 target_col="y_excess_lead",
@@ -906,13 +931,18 @@ def run_multitask(
                     rank,
                     max_iter,
                     task_kernel,
+                    scaling,
                 )
-                y_params = scale_params["y_excess_lead"]
                 preds = (
                     test_df[["date", "asset_id", "y_excess_lead"]].rename(columns={"y_excess_lead": "y_true"}).copy()
                 )
-                preds["y_pred"] = unscale(pred_mean, y_params["mean"], y_params["std"])
-                preds["pred_std"] = pred_std * y_params["std"]
+                if scaling == "manual_zscore":
+                    y_params = scale_params["y_excess_lead"]
+                    preds["y_pred"] = unscale(pred_mean, y_params["mean"], y_params["std"])
+                    preds["pred_std"] = pred_std * y_params["std"]
+                else:
+                    preds["y_pred"] = pred_mean
+                    preds["pred_std"] = pred_std
                 preds["rank_pred"] = preds["y_pred"].rank(ascending=False, method="first")
                 preds["rank_true"] = preds["y_true"].rank(ascending=False, method="first")
                 preds["model"] = variant.name
@@ -1342,7 +1372,14 @@ def main() -> None:
     optimizer_max_iter = None if args.botorch_default_optimizer else args.max_iter
 
     panel_raw = load_panel(args.artifact_path, args.etf_universe)
-    panel, time_scale_params = apply_global_time_minmax(panel_raw)
+    if args.scaling == "manual_zscore":
+        panel, time_scale_params = apply_global_time_minmax(panel_raw)
+    else:
+        panel = panel_raw
+        time_scale_params = {
+            "method": "none",
+            "reason": "BoTorch Normalize scales all non-task inputs, including t_index, inside each training window.",
+        }
     windows = infer_windows(panel, args.last_n_windows)
     manifest = {
         "schema": "gparchitect.time_varying_parameterizations.v1",
@@ -1365,6 +1402,14 @@ def main() -> None:
             else "GPyTorch IndexKernel with prior=None"
             if args.task_kernel == "signed_no_prior"
             else "GPyTorch IndexKernel with LKJCovariancePrior(eta=2.0) and LogNormalPrior(0.0, 0.5) task SD prior"
+        ),
+        "scaling": args.scaling,
+        "scaling_details": (
+            "Global time min-max; rolling train-window z-score for ETF/macro inputs and y_excess_lead; "
+            "BoTorch input_transform=None; StratifiedStandardize by ETF task."
+            if args.scaling == "manual_zscore"
+            else "BayesFolio-style BoTorch Normalize on non-task input columns; task feature excluded; "
+            "no manual target scaling; StratifiedStandardize by ETF task."
         ),
         "train_window_months": args.train_window_months,
         "git": git_info(),
@@ -1399,6 +1444,7 @@ def main() -> None:
             optimizer_max_iter,
             train_window_months=args.train_window_months,
             task_kernel=args.task_kernel,
+            scaling=args.scaling,
         )
         plot_predictions(multitask_preds, "multitask", output_dir)
         plot_multitask_windows(multitask_metrics, output_dir, universe_size=len(args.etf_universe))
