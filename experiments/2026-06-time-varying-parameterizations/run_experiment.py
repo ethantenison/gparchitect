@@ -813,14 +813,17 @@ def fit_multitask(
         replace_with_signed_lkj_index_kernel(model, rank=rank, eta=2.0)
     model.train()
     mll = ExactMarginalLogLikelihood(model.likelihood, model)
+    fit_kwargs: dict[str, Any] = {}
+    if task_kernel == "signed_lkj_eta_2":
+        # IndexKernel registers the LKJ covariance prior without a setter closure,
+        # so BoTorch's retry path cannot resample it after optimizer warnings.
+        # Keep the first optimizer result and let downstream metrics/reporting expose
+        # whether those windows are useful.
+        fit_kwargs["warning_handler"] = lambda _: True
     if max_iter is None:
-        fit_gpytorch_mll(mll)
+        fit_gpytorch_mll(mll, **fit_kwargs)
     else:
-        fit_kwargs: dict[str, Any] = {"optimizer_kwargs": {"options": {"maxiter": max_iter}}}
-        if task_kernel == "signed_lkj_eta_2":
-            # IndexKernel's LKJ prior has no setter closure in GPyTorch, so BoTorch's
-            # retry path cannot resample it after an optimizer warning.
-            fit_kwargs["max_attempts"] = 1
+        fit_kwargs["optimizer_kwargs"] = {"options": {"maxiter": max_iter}}
         fit_gpytorch_mll(mll, **fit_kwargs)
     model.eval()
     model.likelihood.eval()
